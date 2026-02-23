@@ -1,0 +1,61 @@
+{
+  "name": "ai-codec",
+  "version": "1.0.0",
+  "description": "AI codec with Ollama, semantic index, and file tools",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "prebuild": "node -e \"const fs=require('fs'); const p=require('path').join(__dirname,'python-runtime'); if(!fs.existsSync(p)) fs.mkdirSync(p,{recursive:true});\"",
+    "build": "npm run prebuild && electron-builder",
+    "build:full": "node scripts/prepare-python.js && npm run build",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "build:linux": "electron-builder --linux",
+    "pack": "electron-builder --dir",
+    "prepare-python": "node scripts/prepare-python.js"
+  },
+  "build": {
+    "appId": "com.aicodec.app",
+    "productName": "AI Codec",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "package.json",
+      "electron/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "backend",
+        "to": "backend",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "python-runtime",
+        "to": "python",
+        "filter": ["**/*"]
+      }
+    ],
+    "win": {
+      "target": ["portable", "nsis"],
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "mac": {
+      "target": ["dmg", "zip"],
+      "category": "public.app-category.developer-tools"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"]
+    },
+    "electronVersion": "28.0.0"
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.13.3"
+  }
+}

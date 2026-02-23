@@ -1,0 +1,170 @@
+import asyncio
+import json
+import logging
+from typing import Any, AsyncGenerator, Dict, Optional
+
+from langchain_core.messages import HumanMessage
+
+from config import AGENT_MAX_STEPS, AGENT_TIMEOUT_SEC
+
+log = logging.getLogger("agent_harness")
+
+STEP_TIMEOUT_SEC = 600
+
+
+def _step_timeout_for_run(timeout_sec: Optional[int]) -> int:
+    if timeout_sec is not None and timeout_sec > 0:
+        return timeout_sec
+    if AGENT_TIMEOUT_SEC > 0:
+        return AGENT_TIMEOUT_SEC
+    return STEP_TIMEOUT_SEC
+
+
+async def stream_events(
+    agent: Any,
+    message: str,
+    config: Optional[Dict[str, Any]] = None,
+    timeout_sec: Optional[int] = None,
+    max_steps: Optional[int] = None,
+) -> AsyncGenerator[str, None]:
+    timeout = timeout_sec if timeout_sec is not None else (AGENT_TIMEOUT_SEC if AGENT_TIMEOUT_SEC > 0 else None)
+    step_timeout = _step_timeout_for_run(timeout_sec)
+    limit = max_steps if max_steps is not None else (AGENT_MAX_STEPS if AGENT_MAX_STEPS > 0 else None)
+    config = config or {"configurable": {}}
+    if "recursion_limit" not in config:
+        config = {**config, "recursion_limit": 100}
+    inputs = {"messages": [HumanMessage(content=message)]}
+    tool_count = 0
+    stream_started = False
+
+    yield json.dumps({"type": "phase", "phase": "processing"}) + "\n"
+
+    try:
+        astream = agent.astream_events(inputs, config=config, version="v2")
+        while True:
+            try:
+                event = await asyncio.wait_for(astream.__anext__(), timeout=step_timeout)
+            except asyncio.TimeoutError:
+                yield json.dumps({
+                    "type": "error",
+                    "content": f"Agent step timed out after {step_timeout}s",
+                }) + "\n"
+                break
+            except StopAsyncIteration:
+                break
+
+            kind = event.get("event")
+            if kind == "on_tool_start":
+                tool_count += 1
+                if limit and tool_count > limit:
+                    log.warning("max_steps exceeded: %s", limit)
+                    yield json.dumps({
+                        "type": "error",
+                        "content": f"Agent exceeded max steps ({limit})",
+                    }) + "\n"
+                    break
+                name = event.get("name", "?")
+                log.info("tool_start: %s", name)
+                yield json.dumps({"type": "tool_start", "tool": name}) + "\n"
+                yield json.dumps({"type": "status", "content": f"Calling tool: {name}"}) + "\n"
+            elif kind == "on_chat_model_stream":
+                chunk = event.get("data", {}).get("chunk", {})
+                if hasattr(chunk, "content") and chunk.content:
+                    if not stream_started:
+                        stream_started = True
+                        yield json.dumps({"type": "phase", "phase": "streaming"}) + "\n"
+                    yield json.dumps({"type": "token", "content": chunk.content}) + "\n"
+            elif kind == "on_tool_end":
+                name = event.get("name", "?")
+                raw = event.get("data", {}).get("output", "")
+                output = getattr(raw, "content", raw) if raw else ""
+                output_str = str(output) if not isinstance(output, str) else output
+                summary = output_str
+                if "\n__UI__\n" in output_str:
+                    parts = output_str.split("\n__UI__\n", 1)
+                    summary = parts[0]
+                    try:
+                        ui = json.loads(parts[1])
+                        if ui.get("type") == "file_edit":
+                            yield json.dumps({
+                                "type": "file_edit",
+                                "path": ui.get("path", ""),
+                                "old": ui.get("old", ""),
+                                "new": ui.get("new", ""),
+                            }) + "\n"
+                        elif ui.get("type") == "shell_run":
+                            yield json.dumps({
+                                "type": "shell_run",
+                                "command": ui.get("command", ""),
+                                "stdout": ui.get("stdout", ""),
+                                "stderr": ui.get("stderr", ""),
+                                "exit_code": ui.get("exit_code", 0),
+                            }) + "\n"
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                preview = (summary[:500] + "…") if len(summary) > 500 else summary
+                yield json.dumps({
+                    "type": "tool_done",
+                    "tool": name,
+                    "preview": preview,
+                }) + "\n"
+            elif kind == "on_chain_error":
+                err = event.get("data", {}).get("error", "Unknown error")
+                log.error("chain_error: %s", err)
+                yield json.dumps({"type": "error", "content": str(err)}) + "\n"
+                break
+    except asyncio.CancelledError:
+        yield json.dumps({"type": "error", "content": "Agent run cancelled"}) + "\n"
+        raise
+    except Exception as e:
+        log.exception("harness stream_events failed")
+        yield json.dumps({"type": "error", "content": str(e)}) + "\n"
+
+
+async def run(
+    agent: Any,
+    message: str,
+    config: Optional[Dict[str, Any]] = None,
+    timeout_sec: Optional[int] = None,
+    max_steps: Optional[int] = None,
+) -> Dict[str, Any]:
+    tokens = []
+    tool_calls = []
+    error_msg = None
+    config = config or {"configurable": {}}
+    if "recursion_limit" not in config:
+        config = {**config, "recursion_limit": 100}
+
+    async def consume():
+        nonlocal error_msg
+        async for line in stream_events(agent, message, config, timeout_sec, max_steps):
+            if not line.strip():
+                continue
+            if line.startswith("data: "):
+                try:
+                    data = json.loads(line[6:])
+                    if data.get("type") == "token" and data.get("content"):
+                        tokens.append(data["content"])
+                    elif data.get("type") == "tool_start":
+                        tool_calls.append({"tool": data.get("tool", "?"), "done": False})
+                    elif data.get("type") == "tool_done":
+                        for t in reversed(tool_calls):
+                            if not t.get("done"):
+                                t["done"] = True
+                                t["preview"] = data.get("preview", "")
+                                break
+                    elif data.get("type") == "error":
+                        error_msg = data.get("content", "Unknown error")
+                except json.JSONDecodeError:
+                    pass
+
+    if timeout_sec and timeout_sec > 0:
+        await asyncio.wait_for(consume(), timeout=timeout_sec)
+    else:
+        await consume()
+
+    return {
+        "content": "".join(tokens),
+        "tool_calls": tool_calls,
+        "error": error_msg,
+    }

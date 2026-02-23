@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Codec</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <nav class="sidebar-nav">
+        <a href="#" class="nav-item" data-page="home">Home</a>
+        <div class="nav-section">
+          <button type="button" class="nav-item nav-toggle" aria-expanded="true">
+            Chat
+          </button>
+          <div class="nav-sub">
+            <a href="#" class="nav-item nav-item-new-chat active" id="nav-new-chat">New chat</a>
+            <div class="history-section">
+              <div class="history-section-label">History</div>
+              <div class="history-list" id="history-list"></div>
+            </div>
+          </div>
+        </div>
+      </nav>
+    </aside>
+    <main class="main">
+      <div id="connecting-banner" class="connecting-banner" role="status" hidden>
+        <span class="connecting-spinner" aria-hidden="true"></span>
+        <span class="connecting-text" id="connecting-text">Starting backend…</span>
+        <button type="button" id="connecting-retry" class="connecting-retry" hidden>Retry</button>
+      </div>
+      <button type="button" class="btn-index" id="btn-index">Index workspace</button>
+      <div class="activity" id="activity"></div>
+      <div class="messages" id="messages"></div>
+      <footer class="bottom-bar">
+        <div class="top-row">
+          <button type="button" class="project-path" id="project-path" title="Click to change project folder">
+            <span class="project-path-icon" aria-hidden="true"></span>
+            <span class="project-path-text" id="project-path-text">C:\check</span>
+          </button>
+          <form class="input-wrap" id="form">
+            <div class="input-hint">Ctrl+↑ / Ctrl+↓ to navigate messages</div>
+            <div class="input-row">
+              <textarea id="input" rows="1" placeholder="Ask or request file changes…" disabled></textarea>
+              <button type="submit" id="submit" disabled>Send</button>
+              <button type="button" id="btn-cancel" class="btn-cancel" hidden>Cancel</button>
+            </div>
+          </form>
+        </div>
+        <div class="status-bar">
+          <div class="model-select-wrap">
+            <button type="button" class="model-status" id="model-status" title="Click to change model">
+              <span class="model-dot"></span>
+              <span id="model-name">gpt-oss:20b</span>
+            </button>
+            <div class="model-dropdown" id="model-dropdown" hidden>
+              <div class="model-dropdown-current">
+                <div class="model-dropdown-label">Current model</div>
+                <div class="model-dropdown-value" id="model-dropdown-current">gpt-oss:20b – Ollama</div>
+              </div>
+              <button type="button" class="model-dropdown-item" id="model-change-btn">
+                <span class="model-dropdown-item-text">Change Model</span>
+                <span class="model-dropdown-icon" aria-hidden="true"></span>
+              </button>
+            </div>
+          </div>
+          <button type="button" class="btn-retry" id="btn-retry">Retry connection</button>
+          <span class="mode-label">autonomous</span>
+        </div>
+      </footer>
+    </main>
+  </div>
+  <div class="modal-overlay" id="model-modal" hidden>
+    <div class="modal" role="dialog" aria-labelledby="model-modal-title">
+      <div class="modal-header">
+        <span class="modal-icon" aria-hidden="true"></span>
+        <h2 class="modal-title" id="model-modal-title">Switch models</h2>
+        <button type="button" class="modal-close" id="model-modal-close" aria-label="Close">&times;</button>
+      </div>
+      <p class="modal-desc">Select a provider and model to use for your conversations.</p>
+      <div class="modal-body">
+        <div class="modal-field">
+          <label class="modal-label" for="model-provider">Provider</label>
+          <div class="modal-select-wrapper">
+            <select id="model-provider" class="modal-select">
+              <option value="Ollama">Ollama</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-field">
+          <label class="modal-label" for="model-select">Model</label>
+          <div class="modal-select-wrapper">
+            <select id="model-select" class="modal-select"></select>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-modal-primary" id="model-modal-save">Save</button>
+      </div>
+    </div>
+  </div>
+  <script src="renderer.js"></script>
+</body>
+</html>
