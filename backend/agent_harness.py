@@ -3,21 +3,28 @@ import json
 import logging
 from typing import Any, AsyncGenerator, Dict, Optional
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
-from config import AGENT_MAX_STEPS, AGENT_TIMEOUT_SEC
+from config import AGENT_MAX_STEPS, AGENT_TIMEOUT_SEC, MAX_HISTORY_MESSAGES, STEP_TIMEOUT_SEC
 
 log = logging.getLogger("agent_harness")
-
-STEP_TIMEOUT_SEC = 600
 
 
 def _step_timeout_for_run(timeout_sec: Optional[int]) -> int:
     if timeout_sec is not None and timeout_sec > 0:
-        return timeout_sec
-    if AGENT_TIMEOUT_SEC > 0:
-        return AGENT_TIMEOUT_SEC
+        return min(timeout_sec, STEP_TIMEOUT_SEC)
     return STEP_TIMEOUT_SEC
+
+
+def _to_langchain_messages(history: list) -> list[BaseMessage]:
+    out = []
+    for m in history[-MAX_HISTORY_MESSAGES:]:
+        role, content = m.get("role", ""), m.get("content", "")
+        if role == "user":
+            out.append(HumanMessage(content=content))
+        elif role == "assistant":
+            out.append(AIMessage(content=content))
+    return out
 
 
 async def stream_events(
@@ -26,6 +33,7 @@ async def stream_events(
     config: Optional[Dict[str, Any]] = None,
     timeout_sec: Optional[int] = None,
     max_steps: Optional[int] = None,
+    history: Optional[list] = None,
 ) -> AsyncGenerator[str, None]:
     timeout = timeout_sec if timeout_sec is not None else (AGENT_TIMEOUT_SEC if AGENT_TIMEOUT_SEC > 0 else None)
     step_timeout = _step_timeout_for_run(timeout_sec)
@@ -33,7 +41,9 @@ async def stream_events(
     config = config or {"configurable": {}}
     if "recursion_limit" not in config:
         config = {**config, "recursion_limit": 100}
-    inputs = {"messages": [HumanMessage(content=message)]}
+    messages = _to_langchain_messages(history) if history else []
+    messages.append(HumanMessage(content=message))
+    inputs = {"messages": messages}
     tool_count = 0
     stream_started = False
 
@@ -127,6 +137,7 @@ async def run(
     config: Optional[Dict[str, Any]] = None,
     timeout_sec: Optional[int] = None,
     max_steps: Optional[int] = None,
+    history: Optional[list] = None,
 ) -> Dict[str, Any]:
     tokens = []
     tool_calls = []
@@ -137,26 +148,27 @@ async def run(
 
     async def consume():
         nonlocal error_msg
-        async for line in stream_events(agent, message, config, timeout_sec, max_steps):
-            if not line.strip():
+        async for line in stream_events(agent, message, config, timeout_sec, max_steps, history):
+            raw = line.strip()
+            if not raw:
                 continue
-            if line.startswith("data: "):
-                try:
-                    data = json.loads(line[6:])
-                    if data.get("type") == "token" and data.get("content"):
-                        tokens.append(data["content"])
-                    elif data.get("type") == "tool_start":
-                        tool_calls.append({"tool": data.get("tool", "?"), "done": False})
-                    elif data.get("type") == "tool_done":
-                        for t in reversed(tool_calls):
-                            if not t.get("done"):
-                                t["done"] = True
-                                t["preview"] = data.get("preview", "")
-                                break
-                    elif data.get("type") == "error":
-                        error_msg = data.get("content", "Unknown error")
-                except json.JSONDecodeError:
-                    pass
+            payload = raw[6:] if raw.startswith("data: ") else raw
+            try:
+                data = json.loads(payload)
+                if data.get("type") == "token" and data.get("content"):
+                    tokens.append(data["content"])
+                elif data.get("type") == "tool_start":
+                    tool_calls.append({"tool": data.get("tool", "?"), "done": False})
+                elif data.get("type") == "tool_done":
+                    for t in reversed(tool_calls):
+                        if not t.get("done"):
+                            t["done"] = True
+                            t["preview"] = data.get("preview", "")
+                            break
+                elif data.get("type") == "error":
+                    error_msg = data.get("content", "Unknown error")
+            except json.JSONDecodeError:
+                pass
 
     if timeout_sec and timeout_sec > 0:
         await asyncio.wait_for(consume(), timeout=timeout_sec)

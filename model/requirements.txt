@@ -1,0 +1,10 @@
+torch>=2.2.0
+triton>=3.4.0
+numpy
+bitsandbytes
+peft
+trl
+datasets
+accelerate
+transformers
+unsloth

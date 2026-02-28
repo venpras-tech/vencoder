@@ -5,6 +5,17 @@ const { spawn } = require('child_process');
 
 function getLogPath() {
   try {
+    let customDir = null;
+    try {
+      const settings = getAppSettings();
+      customDir = settings.logPath;
+    } catch (_) {}
+    if (customDir && typeof customDir === 'string') {
+      try {
+        fs.mkdirSync(customDir, { recursive: true });
+        return path.join(customDir, 'app.log');
+      } catch (_) {}
+    }
     if (app.isPackaged) {
       const dir = path.join(process.env.APPDATA || process.env.LOCALAPPDATA || process.cwd(), 'ai-codec');
       try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
@@ -27,8 +38,8 @@ function log(level, ...args) {
 }
 
 function writeCrashLog(err) {
-  const logPath = path.join(process.env.APPDATA || process.env.LOCALAPPDATA || process.cwd(), 'ai-codec', 'app.log');
   try {
+    const logPath = getLogPath();
     fs.mkdirSync(path.dirname(logPath), { recursive: true });
     fs.appendFileSync(logPath, `${new Date().toISOString()} [CRASH] ${err.stack || err}\n`);
   } catch (_) {}
@@ -46,6 +57,7 @@ const BACKEND_HOST = '127.0.0.1';
 let backendProcess = null;
 let mainWindow = null;
 let splashWindow = null;
+let isShuttingDown = false;
 
 function getBackendDir() {
   if (app.isPackaged) {
@@ -68,6 +80,25 @@ function getBackendPath() {
 }
 
 const BACKEND_CONFIG_FILE = 'backend-config.json';
+const APP_SETTINGS_FILE = 'app-settings.json';
+
+function getAppSettings() {
+  try {
+    const cfgPath = path.join(app.getPath('userData'), APP_SETTINGS_FILE);
+    if (fs.existsSync(cfgPath)) {
+      return JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+    }
+  } catch (_) {}
+  return {};
+}
+
+function setAppSettings(settings) {
+  try {
+    const cfgPath = path.join(app.getPath('userData'), APP_SETTINGS_FILE);
+    const current = getAppSettings();
+    fs.writeFileSync(cfgPath, JSON.stringify({ ...current, ...settings }), 'utf8');
+  } catch (_) {}
+}
 
 function getSavedPythonPath() {
   if (!app.isPackaged) return null;
@@ -178,10 +209,14 @@ function startBackend(workspaceRoot) {
     proc.on('error', (err) => {
       log('ERROR', 'Backend spawn error:', err.message);
     });
-    proc.on('exit', (code, sig) => {
-      log('INFO', 'Backend exited', code, sig);
-    });
-    return proc;
+        proc.on('exit', (code, sig) => {
+          log('INFO', 'Backend exited', code, sig);
+          if (!isShuttingDown && code !== 0 && sig !== 'SIGTERM') {
+            log('INFO', 'Backend crashed, restarting in 2s...');
+            setTimeout(() => startBackend(projectPath), 2000);
+          }
+        });
+        return proc;
   }
 
   function tryOrderWinDev() {
@@ -208,6 +243,10 @@ function startBackend(workspaceRoot) {
       });
       proc.on('exit', (code, sig) => {
         log('INFO', 'Backend exited', code, sig);
+        if (!isShuttingDown && code !== 0 && sig !== 'SIGTERM') {
+          log('INFO', 'Backend crashed, restarting in 2s...');
+          setTimeout(() => startBackend(projectPath), 2000);
+        }
       });
       idx++;
     }
@@ -239,7 +278,13 @@ function startBackend(workspaceRoot) {
           idx++;
           trySpawn();
         });
-        proc.on('exit', (c, s) => log('INFO', 'Backend exited', c, s));
+        proc.on('exit', (c, s) => {
+          log('INFO', 'Backend exited', c, s);
+          if (!isShuttingDown && c !== 0 && s !== 'SIGTERM') {
+            log('INFO', 'Backend crashed, restarting in 2s...');
+            setTimeout(() => startBackend(projectPath), 2000);
+          }
+        });
         idx++;
       }
       trySpawn();
@@ -402,12 +447,12 @@ app.whenReady().then(async () => {
       log('INFO', 'resourcesPath', process.resourcesPath, 'backendDir', backendDir, 'bundledPython', bundledPy || 'none');
     }
     showSplash('Loading application…', false);
+    startBackend(projectPath);
     createWindow();
     const showMain = () => {
       updateSplashMessage('Opening window…', false);
       mainWindow.show();
       closeSplash();
-      startBackend(projectPath);
     };
     mainWindow.once('ready-to-show', showMain);
     setTimeout(() => {
@@ -450,7 +495,7 @@ ipcMain.on('splash-retry', async () => {
     closeSplash();
     createWindow();
   } else {
-    updateSplashMessage('Backend could not start. Install dependencies: run "python -m pip install -r requirements.txt" in the backend folder (or use Choose Python… to pick a Python that has them).', true);
+    updateSplashMessage('Backend could not start. Use Python 3.10–3.13 (3.14 has ChromaDB issues). Run "pip install -r requirements.txt" in the backend folder. Or use Choose Python… to pick a compatible Python.', true);
   }
 });
 
@@ -470,7 +515,7 @@ ipcMain.on('splash-choose-python', async () => {
     properties: ['openFile']
   });
   if (result.canceled || !result.filePaths.length) {
-    updateSplashMessage('Backend could not start. Install dependencies: run "python -m pip install -r requirements.txt" in the backend folder (or use Choose Python… to pick a Python that has them).', true);
+    updateSplashMessage('Backend could not start. Use Python 3.10–3.13 (3.14 has ChromaDB issues). Run "pip install -r requirements.txt" in the backend folder. Or use Choose Python… to pick a compatible Python.', true);
     return;
   }
   const pythonPath = result.filePaths[0];
@@ -481,7 +526,7 @@ ipcMain.on('splash-choose-python', async () => {
     closeSplash();
     createWindow();
   } else {
-    updateSplashMessage('Backend could not start with the selected Python. Install backend deps: pip install -r requirements.txt in the backend folder.', true);
+    updateSplashMessage('Backend could not start with the selected Python. Use Python 3.10–3.13. Install deps: pip install -r requirements.txt in the backend folder.', true);
   }
 });
 
@@ -491,11 +536,40 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  isShuttingDown = true;
   stopBackend();
 });
 
 ipcMain.handle('get-backend-url', () => `http://${BACKEND_HOST}:${BACKEND_PORT}`);
 ipcMain.handle('get-project-path', () => projectPath);
+
+ipcMain.handle('get-log-path', () => getLogPath());
+
+ipcMain.handle('get-log-dir', () => {
+  const settings = getAppSettings();
+  return settings.logPath || null;
+});
+
+ipcMain.handle('set-log-dir', (_, dirPath) => {
+  if (typeof dirPath === 'string') {
+    const trimmed = dirPath.trim();
+    setAppSettings({ logPath: trimmed || null });
+    return true;
+  }
+  return false;
+});
+
+ipcMain.handle('read-logs', () => {
+  try {
+    const p = getLogPath();
+    if (fs.existsSync(p)) {
+      return fs.readFileSync(p, 'utf8');
+    }
+    return '';
+  } catch (e) {
+    return `Error reading logs: ${e.message}`;
+  }
+});
 
 ipcMain.handle('open-folder', async () => {
   const win = BrowserWindow.getFocusedWindow();
@@ -504,6 +578,16 @@ ipcMain.handle('open-folder', async () => {
   });
   if (result.canceled || !result.filePaths.length) return null;
   return result.filePaths[0];
+});
+
+ipcMain.handle('save-file', async (_, defaultName, content) => {
+  const win = BrowserWindow.getFocusedWindow();
+  const result = await dialog.showSaveDialog(win || mainWindow, {
+    defaultPath: defaultName || 'chat-export.json'
+  });
+  if (result.canceled || !result.filePath) return null;
+  fs.writeFileSync(result.filePath, content, 'utf8');
+  return result.filePath;
 });
 
 ipcMain.on('retry-backend', () => {

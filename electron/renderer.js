@@ -17,22 +17,280 @@ const btnRetry = document.getElementById('btn-retry');
 const btnCancel = document.getElementById('btn-cancel');
 const projectPathBtn = document.getElementById('project-path');
 const projectPathText = document.getElementById('project-path-text');
+const projectPathPageBtn = document.getElementById('project-path-page');
+const projectPathTextPage = document.getElementById('project-path-text-page');
 const historyListEl = document.getElementById('history-list');
 const navNewChat = document.getElementById('nav-new-chat');
+const navChat = document.getElementById('nav-chat');
+const chatSub = document.getElementById('chat-sub');
+const navChatHistory = document.getElementById('nav-chat-history');
+const historyPanel = document.getElementById('history-panel');
+const historySelectAll = document.getElementById('history-select-all');
+const btnHistorySave = document.getElementById('btn-history-save');
+const btnHistoryDelete = document.getElementById('btn-history-delete');
+const historyLoadMoreWrap = document.getElementById('history-load-more-wrap');
+const btnHistoryLoadMore = document.getElementById('btn-history-load-more');
+const logsContent = document.getElementById('logs-content');
+const btnRefreshLogs = document.getElementById('btn-refresh-logs');
+const logPathInput = document.getElementById('log-path-input');
+const btnLogPathBrowse = document.getElementById('btn-log-path-browse');
+const btnLogPathApply = document.getElementById('btn-log-path-apply');
 const connectingBanner = document.getElementById('connecting-banner');
 const connectingText = document.getElementById('connecting-text');
 const connectingRetry = document.getElementById('connecting-retry');
+const bottomBar = document.getElementById('bottom-bar');
+const chatWelcomeEl = document.getElementById('chat-welcome');
+const projectTreeEl = document.getElementById('project-tree');
+const projectEditorPlaceholder = document.getElementById('project-editor-placeholder');
+const projectEditorContainer = document.getElementById('project-editor-container');
+const contextSelectorEl = document.getElementById('context-selector');
+const contextListEl = document.getElementById('context-list');
 
 let baseUrl = '';
+let contextPaths = [];
+let contextState = {
+  codebase: false,
+  docs: [],
+  git: null,
+  web: '',
+  past_chats: false,
+  browser: false,
+  code: []
+};
+let currentPage = 'home';
 let messageHistory = [];
 let historyIndex = -1;
 let currentModelName = 'gpt-oss:20b';
 let currentChatAbortController = null;
 let currentConversationId = null;
 let conversationsList = [];
+let historyTotal = 0;
+let selectedChatIds = new Set();
 
 function setProjectPathDisplay(pathStr) {
-  if (projectPathText) projectPathText.textContent = pathStr || 'No folder selected';
+  const text = pathStr || 'No folder selected';
+  if (projectPathText) projectPathText.textContent = text;
+  if (projectPathTextPage) projectPathTextPage.textContent = text;
+}
+
+function addContextPath(path) {
+  if (!path || contextPaths.includes(path)) return;
+  contextPaths.push(path);
+  renderContextList();
+  updateContextTypeButtons();
+}
+
+function removeContextPath(path) {
+  contextPaths = contextPaths.filter((p) => p !== path);
+  renderContextList();
+  updateContextTypeButtons();
+}
+
+function hasAnyContext() {
+  return contextPaths.length > 0 ||
+    contextState.code.length > 0 ||
+    contextState.codebase ||
+    contextState.docs.length > 0 ||
+    contextState.git ||
+    (contextState.web && contextState.web.trim()) ||
+    contextState.past_chats ||
+    contextState.browser;
+}
+
+function buildContextPayload() {
+  const ctx = {};
+  if (contextPaths.length) ctx.files = [...contextPaths];
+  if (contextState.code.length) ctx.code = contextState.code;
+  if (contextState.codebase) ctx.codebase = true;
+  if (contextState.docs.length) ctx.docs = [...contextState.docs];
+  if (contextState.git) ctx.git = contextState.git;
+  if (contextState.web && contextState.web.trim()) ctx.web = contextState.web.trim();
+  if (contextState.past_chats) ctx.past_chats = true;
+  if (contextState.browser) ctx.browser = true;
+  return Object.keys(ctx).length ? ctx : undefined;
+}
+
+function renderContextList() {
+  if (!contextListEl || !contextSelectorEl) return;
+  if (!hasAnyContext()) {
+    contextSelectorEl.hidden = true;
+    contextListEl.innerHTML = '';
+    return;
+  }
+  contextSelectorEl.hidden = false;
+  contextListEl.innerHTML = '';
+  contextPaths.forEach((path) => {
+    const chip = document.createElement('div');
+    chip.className = 'context-chip';
+    chip.dataset.type = 'files';
+    const label = document.createElement('span');
+    label.className = 'context-chip-label';
+    label.textContent = path;
+    label.title = path;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'context-chip-remove';
+    btn.textContent = '×';
+    btn.title = 'Remove from context';
+    btn.addEventListener('click', () => removeContextPath(path));
+    chip.appendChild(label);
+    chip.appendChild(btn);
+    contextListEl.appendChild(chip);
+  });
+  contextState.code.forEach((seg, i) => {
+    const chip = document.createElement('div');
+    chip.className = 'context-chip';
+    chip.dataset.type = 'code';
+    const label = document.createElement('span');
+    label.className = 'context-chip-label';
+    label.textContent = seg.path + (seg.startLine ? `:${seg.startLine}-${seg.endLine}` : '');
+    label.title = seg.path;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'context-chip-remove';
+    btn.textContent = '×';
+    btn.addEventListener('click', () => {
+      contextState.code = contextState.code.filter((_, idx) => idx !== i);
+      renderContextList();
+    });
+    chip.appendChild(label);
+    chip.appendChild(btn);
+    contextListEl.appendChild(chip);
+  });
+  contextState.docs.forEach((url, i) => {
+    const chip = document.createElement('div');
+    chip.className = 'context-chip';
+    chip.dataset.type = 'docs';
+    const label = document.createElement('span');
+    label.className = 'context-chip-label';
+    label.textContent = url;
+    label.title = url;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'context-chip-remove';
+    btn.textContent = '×';
+    btn.addEventListener('click', () => {
+      contextState.docs.splice(i, 1);
+      renderContextList();
+    });
+    chip.appendChild(label);
+    chip.appendChild(btn);
+    contextListEl.appendChild(chip);
+  });
+  if (contextState.codebase) {
+    const chip = document.createElement('div');
+    chip.className = 'context-chip context-chip-tag';
+    chip.textContent = '@Codebase';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'context-chip-remove';
+    btn.textContent = '×';
+    btn.addEventListener('click', () => {
+      contextState.codebase = false;
+      renderContextList();
+      updateContextTypeButtons();
+    });
+    chip.appendChild(btn);
+    contextListEl.appendChild(chip);
+  }
+  if (contextState.web) {
+    const chip = document.createElement('div');
+    chip.className = 'context-chip';
+    chip.textContent = '@Web: ' + contextState.web;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'context-chip-remove';
+    btn.textContent = '×';
+    btn.addEventListener('click', () => {
+      contextState.web = '';
+      renderContextList();
+      updateContextPanels();
+    });
+    chip.appendChild(btn);
+    contextListEl.appendChild(chip);
+  }
+  if (contextState.git) {
+    const chip = document.createElement('div');
+    chip.className = 'context-chip context-chip-tag';
+    chip.textContent = '@Git';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'context-chip-remove';
+    btn.textContent = '×';
+    btn.addEventListener('click', () => {
+      contextState.git = null;
+      renderContextList();
+      updateContextTypeButtons();
+    });
+    chip.appendChild(btn);
+    contextListEl.appendChild(chip);
+  }
+  if (contextState.past_chats) {
+    const chip = document.createElement('div');
+    chip.className = 'context-chip context-chip-tag';
+    chip.textContent = '@Past Chats';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'context-chip-remove';
+    btn.textContent = '×';
+    btn.addEventListener('click', () => {
+      contextState.past_chats = false;
+      renderContextList();
+      updateContextTypeButtons();
+    });
+    chip.appendChild(btn);
+    contextListEl.appendChild(chip);
+  }
+  if (contextState.browser) {
+    const chip = document.createElement('div');
+    chip.className = 'context-chip context-chip-tag';
+    chip.textContent = '@Browser';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'context-chip-remove';
+    btn.textContent = '×';
+    btn.addEventListener('click', () => {
+      contextState.browser = false;
+      renderContextList();
+      updateContextTypeButtons();
+    });
+    chip.appendChild(btn);
+    contextListEl.appendChild(chip);
+  }
+}
+
+function updateContextTypeButtons() {
+  document.querySelectorAll('.context-type-btn').forEach((btn) => {
+    const t = btn.dataset.type;
+    btn.classList.toggle('active',
+      (t === 'files' && contextPaths.length > 0) ||
+      (t === 'code' && contextState.code.length > 0) ||
+      (t === 'codebase' && contextState.codebase) ||
+      (t === 'docs' && contextState.docs.length > 0) ||
+      (t === 'git' && contextState.git) ||
+      (t === 'web' && !!contextState.web) ||
+      (t === 'past_chats' && contextState.past_chats) ||
+      (t === 'browser' && contextState.browser));
+  });
+}
+
+function updateContextPanels() {
+  const panels = document.getElementById('context-panels');
+  if (!panels) return;
+  panels.innerHTML = '';
+  const addPanel = (id, html) => {
+    const p = document.createElement('div');
+    p.className = 'context-panel';
+    p.id = 'context-panel-' + id;
+    p.innerHTML = html;
+    panels.appendChild(p);
+  };
+  if (contextState.web) {
+    addPanel('web', '<span class="context-panel-label">Web search:</span> ' + contextState.web);
+  }
+  if (contextState.git) {
+    addPanel('git', '<span class="context-panel-label">Git:</span> ' + (contextState.git.diff ? 'diff' : 'log') + (contextState.git.ref ? ' ' + contextState.git.ref : ''));
+  }
 }
 
 function setModelStatus(connected) {
@@ -79,6 +337,12 @@ function formatHistoryDate(iso) {
 
 function renderHistoryList() {
   if (!historyListEl) return;
+  if (!conversationsList.length) {
+    historyListEl.innerHTML = '<div class="history-empty">No conversations yet</div>';
+    if (historySelectAll) historySelectAll.checked = false;
+    if (historyLoadMoreWrap) historyLoadMoreWrap.hidden = true;
+    return;
+  }
   const byDate = {};
   conversationsList.forEach((c) => {
     const key = formatHistoryDate(c.created_at);
@@ -103,24 +367,62 @@ function renderHistoryList() {
     heading.textContent = label;
     group.appendChild(heading);
     byDate[label].forEach((c) => {
-      const item = document.createElement('button');
-      item.type = 'button';
-      item.className = 'nav-item history-item' + (c.id === currentConversationId ? ' active' : '');
-      item.dataset.id = String(c.id);
-      item.textContent = c.title || 'New chat';
-      item.title = c.title || 'New chat';
-      group.appendChild(item);
+      const wrap = document.createElement('label');
+      wrap.className = 'history-item-wrap' + (c.id === currentConversationId ? ' active' : '');
+      wrap.dataset.id = String(c.id);
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.className = 'history-item-cb';
+      cb.dataset.id = String(c.id);
+      if (selectedChatIds.has(c.id)) cb.checked = true;
+      const span = document.createElement('span');
+      span.className = 'history-item-text';
+      span.textContent = c.title || 'New chat';
+      span.title = c.title || 'New chat';
+      wrap.appendChild(cb);
+      wrap.appendChild(span);
+      group.appendChild(wrap);
     });
     historyListEl.appendChild(group);
   });
+  if (historySelectAll) {
+    historySelectAll.checked = conversationsList.length > 0 && conversationsList.every((c) => selectedChatIds.has(c.id));
+  }
+  if (historyLoadMoreWrap) {
+    historyLoadMoreWrap.hidden = !(historyTotal > conversationsList.length);
+  }
 }
 
-async function fetchHistory() {
+function getSelectedChatIds() {
+  const ids = [];
+  historyListEl?.querySelectorAll('.history-item-cb:checked').forEach((el) => {
+    const id = Number(el.dataset.id);
+    if (id) ids.push(id);
+  });
+  return ids;
+}
+
+function updateSelectedFromCheckboxes() {
+  selectedChatIds.clear();
+  historyListEl?.querySelectorAll('.history-item-cb:checked').forEach((el) => {
+    const id = Number(el.dataset.id);
+    if (id) selectedChatIds.add(id);
+  });
+}
+
+async function fetchHistory(append = false) {
   try {
-    const r = await fetch(baseUrl + '/history');
+    const offset = append ? conversationsList.length : 0;
+    const r = await fetch(baseUrl + '/history?limit=100&offset=' + offset);
     if (!r.ok) return;
     const data = await r.json();
-    conversationsList = data.conversations || [];
+    const items = data.conversations || [];
+    historyTotal = data.total ?? items.length;
+    if (append) {
+      conversationsList.push(...items);
+    } else {
+      conversationsList = items;
+    }
     renderHistoryList();
   } catch (_) {}
 }
@@ -129,16 +431,28 @@ function clearMessages() {
   if (messagesEl) messagesEl.innerHTML = '';
   messageHistory = [];
   historyIndex = -1;
+  updateChatWelcome();
+}
+
+function updateChatWelcome() {
+  if (!chatWelcomeEl) return;
+  const hasMessages = messagesEl && messagesEl.children.length > 0;
+  chatWelcomeEl.hidden = hasMessages;
 }
 
 function setActiveConversation(id) {
   currentConversationId = id;
   if (historyListEl) {
-    historyListEl.querySelectorAll('.history-item').forEach((el) => {
+    historyListEl.querySelectorAll('.history-item-wrap').forEach((el) => {
       el.classList.toggle('active', Number(el.dataset.id) === id);
     });
   }
   if (navNewChat) navNewChat.classList.toggle('active', id == null);
+}
+
+function setHistoryPanelVisible(visible) {
+  if (historyPanel) historyPanel.hidden = !visible;
+  if (navChatHistory) navChatHistory.classList.toggle('active', visible);
 }
 
 async function loadConversation(id) {
@@ -174,6 +488,7 @@ function appendMessage(role, content) {
   messagesEl.scrollTop = messagesEl.scrollHeight;
   messageHistory.push({ role, content });
   historyIndex = messageHistory.length;
+  updateChatWelcome();
   return div;
 }
 
@@ -279,6 +594,7 @@ function getOrCreateAssistantBubble() {
   wrap.appendChild(div);
   messagesEl.appendChild(wrap);
   messagesEl.scrollTop = messagesEl.scrollHeight;
+  updateChatWelcome();
   return { bubble: div, steps: stepsEl, blocks: blocksEl };
 }
 function addStep(stepsEl, text, detail, isDone = false) {
@@ -368,7 +684,9 @@ form.addEventListener('submit', async (e) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         message: text,
-        conversation_id: currentConversationId || undefined
+        conversation_id: currentConversationId || undefined,
+        context_paths: contextPaths.length ? contextPaths : undefined,
+        context: buildContextPayload()
       }),
       signal: currentChatAbortController.signal
     });
@@ -448,8 +766,9 @@ form.addEventListener('submit', async (e) => {
             } else if (data.type === 'conversation_title' && data.id != null && data.title) {
               const c = conversationsList.find((x) => x.id === data.id);
               if (c) c.title = data.title;
-              const btn = historyListEl.querySelector('.history-item[data-id="' + data.id + '"]');
-              if (btn) btn.textContent = data.title;
+              const wrap = historyListEl.querySelector('.history-item-wrap[data-id="' + data.id + '"]');
+              const span = wrap?.querySelector('.history-item-text');
+              if (span) span.textContent = data.title;
             }
           } catch (_) {}
         }
@@ -482,6 +801,11 @@ if (btnCancel) btnCancel.addEventListener('click', () => {
 });
 
 if (input) input.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    if (form) form.requestSubmit();
+    return;
+  }
   if (e.ctrlKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
     e.preventDefault();
     if (messageHistory.length === 0) return;
@@ -499,14 +823,18 @@ if (input) input.addEventListener('keydown', (e) => {
   }
 });
 
-if (projectPathBtn) projectPathBtn.addEventListener('click', async () => {
+function openFolderHandler() {
   if (!window.electronAPI || !window.electronAPI.openFolder) return;
-  const chosen = await window.electronAPI.openFolder();
-  if (chosen) {
-    window.electronAPI.setProjectPath(chosen);
-    setProjectPathDisplay(chosen);
-  }
-});
+  return window.electronAPI.openFolder().then((chosen) => {
+    if (chosen) {
+      window.electronAPI.setProjectPath(chosen);
+      setProjectPathDisplay(chosen);
+    }
+  });
+}
+
+if (projectPathBtn) projectPathBtn.addEventListener('click', openFolderHandler);
+if (projectPathPageBtn) projectPathPageBtn.addEventListener('click', openFolderHandler);
 
 window.electronAPI?.onRequestOpenFolder?.(async () => {
   if (!window.electronAPI?.openFolder) return;
@@ -522,24 +850,448 @@ window.electronAPI?.onProjectPath?.((pathStr) => {
   currentConversationId = null;
   clearMessages();
   fetchHistory();
+  if (currentPage === 'project') loadProjectTree();
+});
+
+let projectSelectedPath = null;
+let highlightJsLoaded = false;
+
+async function ensureHighlightJs() {
+  if (highlightJsLoaded) return;
+  try {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = '../node_modules/@highlightjs/cdn-assets/styles/github.min.css';
+    document.head.appendChild(link);
+    const script = document.createElement('script');
+    script.src = '../node_modules/@highlightjs/cdn-assets/highlight.js';
+    await new Promise((resolve, reject) => {
+      script.onload = resolve;
+      script.onerror = reject;
+      document.head.appendChild(script);
+    });
+    highlightJsLoaded = true;
+  } catch (_) {}
+}
+
+function renderProjectTreeItem(node, depth = 0, expanded = true) {
+  const wrap = document.createElement('div');
+  wrap.className = 'project-tree-item-wrap';
+  const item = document.createElement('div');
+  item.className = 'project-tree-item' + (projectSelectedPath === node.path ? ' selected' : '');
+  item.dataset.path = node.path;
+  item.dataset.type = node.type;
+  item.style.paddingLeft = (16 + depth * 12) + 'px';
+  const icon = document.createElement('span');
+  icon.className = 'project-tree-item-icon';
+  icon.textContent = node.type === 'folder' ? (expanded ? '▾' : '▸') : ' ';
+  const name = document.createElement('span');
+  name.className = 'project-tree-item-name';
+  name.textContent = node.name;
+  item.appendChild(icon);
+  item.appendChild(name);
+  wrap.appendChild(item);
+  const children = document.createElement('div');
+  children.className = 'project-tree-children';
+  children.dataset.expanded = expanded ? '1' : '0';
+  if (node.type === 'folder' && node.children && node.children.length) {
+    node.children.forEach((c) => children.appendChild(renderProjectTreeItem(c, depth + 1, expanded)));
+    wrap.appendChild(children);
+  }
+  return wrap;
+}
+
+async function loadProjectTree() {
+  if (!projectTreeEl) return;
+  projectTreeEl.innerHTML = '<div class="project-tree-loading">Loading…</div>';
+  try {
+    const r = await fetch(baseUrl + '/files/tree');
+    if (!r.ok) throw new Error(r.statusText);
+    const data = await r.json();
+    projectTreeEl.innerHTML = '';
+    (data.tree || []).forEach((node) => projectTreeEl.appendChild(renderProjectTreeItem(node)));
+  } catch (err) {
+    projectTreeEl.innerHTML = '<div class="project-tree-loading">Failed to load files</div>';
+  }
+}
+
+function renderHighlightedCode(content, language, path) {
+  if (!projectEditorContainer) return;
+  projectEditorContainer.innerHTML = '';
+  const header = document.createElement('div');
+  header.className = 'project-editor-header';
+  const fileName = document.createElement('div');
+  fileName.className = 'project-editor-filename';
+  fileName.textContent = path || '';
+  fileName.title = path || '';
+  header.appendChild(fileName);
+  if (path) {
+    const addCtxBtn = document.createElement('button');
+    addCtxBtn.type = 'button';
+    addCtxBtn.className = 'btn-add-context';
+    addCtxBtn.textContent = '@Files';
+    addCtxBtn.title = 'Add full file to context';
+    addCtxBtn.addEventListener('click', () => {
+      addContextPath(path);
+      setPage('chat');
+    });
+    const addCodeBtn = document.createElement('button');
+    addCodeBtn.type = 'button';
+    addCodeBtn.className = 'btn-add-context';
+    addCodeBtn.textContent = '@Code';
+    addCodeBtn.title = 'Add as code segment (optional line range)';
+    addCodeBtn.addEventListener('click', () => {
+      const range = prompt('Line range (e.g. 10-20, or leave empty for full file):');
+      let startLine = 1, endLine = 99999;
+      if (range && /^\d+-\d+$/.test(range.trim())) {
+        const [s, e] = range.split('-').map(Number);
+        startLine = s;
+        endLine = e;
+      }
+      contextState.code.push({ path, startLine, endLine });
+      renderContextList();
+      updateContextTypeButtons();
+      setPage('chat');
+    });
+    header.appendChild(addCtxBtn);
+    header.appendChild(addCodeBtn);
+  }
+  projectEditorContainer.appendChild(header);
+  const scrollWrap = document.createElement('div');
+  scrollWrap.className = 'project-editor-scroll';
+  const pre = document.createElement('pre');
+  pre.className = 'project-editor-code';
+  const code = document.createElement('code');
+  code.className = 'language-' + (language || 'plaintext');
+  code.textContent = content;
+  pre.appendChild(code);
+  scrollWrap.appendChild(pre);
+  projectEditorContainer.appendChild(scrollWrap);
+  if (window.hljs) {
+    window.hljs.highlightElement(code);
+  }
+  projectEditorContainer.hidden = false;
+  if (projectEditorPlaceholder) projectEditorPlaceholder.hidden = true;
+}
+
+async function loadFileInEditor(path) {
+  projectSelectedPath = path;
+  projectTreeEl?.querySelectorAll('.project-tree-item').forEach((el) => {
+    el.classList.toggle('selected', el.dataset.path === path);
+  });
+  if (projectEditorPlaceholder) projectEditorPlaceholder.hidden = true;
+  if (projectEditorContainer) projectEditorContainer.hidden = false;
+  try {
+    const r = await fetch(baseUrl + '/files/content?path=' + encodeURIComponent(path));
+    if (!r.ok) throw new Error(r.statusText);
+    const data = await r.json();
+    const content = data.content || '';
+    const language = data.language || 'plaintext';
+    renderHighlightedCode(content, language, path);
+  } catch (err) {
+    if (projectEditorPlaceholder) {
+      projectEditorPlaceholder.textContent = 'Error: ' + (err.message || String(err));
+      projectEditorPlaceholder.hidden = false;
+    }
+    if (projectEditorContainer) {
+      projectEditorContainer.hidden = true;
+      projectEditorContainer.innerHTML = '';
+    }
+  }
+}
+
+projectTreeEl?.addEventListener('contextmenu', (e) => {
+  const item = e.target.closest('.project-tree-item');
+  if (!item || item.dataset.type !== 'file') return;
+  e.preventDefault();
+  addContextPath(item.dataset.path);
+  addActivity('Added to context: ' + item.dataset.path, 'status');
+});
+
+document.getElementById('context-types')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('.context-type-btn');
+  if (!btn) return;
+  const t = btn.dataset.type;
+  if (t === 'files') {
+    setPage('project');
+    return;
+  }
+  if (t === 'code') {
+    const path = projectSelectedPath || prompt('File path (relative to workspace):');
+    if (path) {
+      const range = prompt('Line range (e.g. 10-20, or leave empty for full file):');
+      let startLine = 1, endLine = 99999;
+      if (range && /^\d+-\d+$/.test(range.trim())) {
+        const [s, e] = range.split('-').map(Number);
+        startLine = s;
+        endLine = e;
+      }
+      contextState.code.push({ path: path.trim(), startLine, endLine });
+      renderContextList();
+      updateContextTypeButtons();
+    }
+    return;
+  }
+  if (t === 'codebase') {
+    contextState.codebase = !contextState.codebase;
+    renderContextList();
+    updateContextTypeButtons();
+    return;
+  }
+  if (t === 'docs') {
+    const url = prompt('Documentation URL:');
+    if (url && url.trim()) {
+      contextState.docs.push(url.trim());
+      renderContextList();
+      updateContextTypeButtons();
+    }
+    return;
+  }
+  if (t === 'git') {
+    const mode = prompt('Git: "log" or "diff" (default: log):') || 'log';
+    const ref = prompt('Commit/ref (optional, e.g. HEAD~5):');
+    contextState.git = { diff: mode.toLowerCase() === 'diff', ref: ref?.trim() || null, n: 5 };
+    renderContextList();
+    updateContextTypeButtons();
+    updateContextPanels();
+    return;
+  }
+  if (t === 'web') {
+    const q = contextState.web || prompt('Web search query:');
+    if (q !== null) {
+      contextState.web = (q || '').trim();
+      renderContextList();
+      updateContextTypeButtons();
+      updateContextPanels();
+    }
+    return;
+  }
+  if (t === 'past_chats') {
+    contextState.past_chats = !contextState.past_chats;
+    renderContextList();
+    updateContextTypeButtons();
+    return;
+  }
+  if (t === 'browser') {
+    contextState.browser = !contextState.browser;
+    addActivity('@Browser: Placeholder - browser context not yet implemented', 'status');
+    renderContextList();
+    updateContextTypeButtons();
+    return;
+  }
+});
+
+projectTreeEl?.addEventListener('click', (e) => {
+  const item = e.target.closest('.project-tree-item');
+  if (!item) return;
+  if (item.dataset.type === 'file') {
+    loadFileInEditor(item.dataset.path);
+    return;
+  }
+  if (item.dataset.type === 'folder') {
+    const wrap = item.closest('.project-tree-item-wrap');
+    const children = wrap?.querySelector(':scope > .project-tree-children');
+    if (children) {
+      const expanded = children.dataset.expanded !== '1';
+      children.dataset.expanded = expanded ? '1' : '0';
+      children.hidden = !expanded;
+      const icon = item.querySelector('.project-tree-item-icon');
+      if (icon) icon.textContent = expanded ? '▼' : '▶';
+    }
+  }
+});
+
+async function loadLogs() {
+  if (!logsContent) return;
+  try {
+    const text = window.electronAPI?.readLogs ? await window.electronAPI.readLogs() : 'Logs unavailable';
+    logsContent.textContent = text || '(empty)';
+  } catch (e) {
+    logsContent.textContent = 'Error: ' + (e.message || String(e));
+  }
+}
+
+function setPage(page) {
+  currentPage = page;
+  document.querySelectorAll('.side-nav-item').forEach((el) => {
+    el.classList.toggle('active', el.dataset.page === page);
+  });
+  document.querySelectorAll('.page-content').forEach((el) => {
+    el.hidden = el.id !== 'page-' + page;
+  });
+  if (chatSub) chatSub.hidden = page !== 'chat';
+  if (page !== 'chat') setHistoryPanelVisible(false);
+  if (bottomBar) bottomBar.hidden = page !== 'chat';
+  if (page === 'chat') updateChatWelcome();
+  if (page === 'logs') loadLogs();
+  if (page === 'settings') loadSettings();
+  if (page === 'project') {
+    ensureHighlightJs();
+    loadProjectTree();
+  }
+}
+
+async function loadSettings() {
+  if (!logPathInput) return;
+  try {
+    const dir = window.electronAPI?.getLogDir ? await window.electronAPI.getLogDir() : null;
+    logPathInput.value = dir || '';
+    logPathInput.placeholder = dir ? '' : 'Default location';
+  } catch (_) {
+    logPathInput.value = '';
+  }
+}
+
+async function saveLogPath(dir) {
+  if (!window.electronAPI?.setLogDir) return;
+  await window.electronAPI.setLogDir(dir || null);
+  if (logPathInput) logPathInput.value = dir || '';
+}
+
+document.querySelectorAll('.side-nav-item').forEach((el) => {
+  const page = el.dataset.page;
+  if (page) el.addEventListener('click', () => setPage(page));
 });
 
 if (navNewChat) {
   navNewChat.addEventListener('click', (e) => {
     e.preventDefault();
+    setPage('chat');
     currentConversationId = null;
+    contextPaths = [];
+    contextState = { codebase: false, docs: [], git: null, web: '', past_chats: false, browser: false, code: [] };
+    renderContextList();
+    updateContextTypeButtons();
+    updateContextPanels();
     clearMessages();
     setActiveConversation(null);
+    setHistoryPanelVisible(false);
+  });
+}
+
+document.querySelectorAll('.chat-suggestion').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const prompt = btn.dataset.prompt;
+    if (prompt && input) {
+      input.value = prompt;
+      input.focus();
+    }
+  });
+});
+
+if (navChatHistory) {
+  navChatHistory.addEventListener('click', (e) => {
+    e.preventDefault();
+    setPage('chat');
+    setHistoryPanelVisible(true);
+    fetchHistory();
+  });
+}
+
+if (btnRefreshLogs) btnRefreshLogs.addEventListener('click', loadLogs);
+
+if (btnLogPathBrowse) {
+  btnLogPathBrowse.addEventListener('click', async () => {
+    if (!window.electronAPI?.openFolder) return;
+    const chosen = await window.electronAPI.openFolder();
+    if (chosen) {
+      await saveLogPath(chosen);
+    }
+  });
+}
+
+if (btnLogPathApply) {
+  btnLogPathApply.addEventListener('click', async () => {
+    const val = logPathInput?.value?.trim() || '';
+    await saveLogPath(val);
+  });
+}
+
+if (logPathInput) {
+  logPathInput.addEventListener('blur', async () => {
+    const val = logPathInput.value?.trim() || '';
+    if (window.electronAPI?.setLogDir) await window.electronAPI.setLogDir(val);
   });
 }
 
 historyListEl?.addEventListener('click', (e) => {
-  const item = e.target.closest('.history-item');
-  if (!item) return;
-  const id = Number(item.dataset.id);
+  if (e.target.classList.contains('history-item-cb')) {
+    updateSelectedFromCheckboxes();
+    if (historySelectAll) {
+      historySelectAll.checked = conversationsList.length > 0 && conversationsList.every((c) => selectedChatIds.has(c.id));
+    }
+    return;
+  }
+  const wrap = e.target.closest('.history-item-wrap');
+  if (!wrap) return;
+  const id = Number(wrap.dataset.id);
   if (!id) return;
   loadConversation(id);
+  setPage('chat');
 });
+
+if (historySelectAll) {
+  historySelectAll.addEventListener('change', () => {
+    const checked = historySelectAll.checked;
+    historyListEl?.querySelectorAll('.history-item-cb').forEach((el) => {
+      el.checked = checked;
+      const id = Number(el.dataset.id);
+      if (id) {
+        if (checked) selectedChatIds.add(id);
+        else selectedChatIds.delete(id);
+      }
+    });
+  });
+}
+
+if (btnHistorySave) {
+  btnHistorySave.addEventListener('click', async () => {
+    updateSelectedFromCheckboxes();
+    const ids = getSelectedChatIds();
+    if (!ids.length) return;
+    try {
+      const r = await fetch(baseUrl + '/history/export?ids=' + ids.join(','));
+      if (!r.ok) throw new Error(r.statusText);
+      const data = await r.json();
+      const content = JSON.stringify(data, null, 2);
+      const name = ids.length === 1 ? 'chat-' + ids[0] + '.json' : 'chats-export.json';
+      const saved = window.electronAPI?.saveFile ? await window.electronAPI.saveFile(name, content) : null;
+      if (saved) addActivity('Saved to ' + saved, 'status');
+    } catch (err) {
+      addActivity('Save failed: ' + err.message, 'error');
+    }
+  });
+}
+
+if (btnHistoryDelete) {
+  btnHistoryDelete.addEventListener('click', async () => {
+    updateSelectedFromCheckboxes();
+    const ids = getSelectedChatIds();
+    if (!ids.length) return;
+    try {
+      const r = await fetch(baseUrl + '/history', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids })
+      });
+      if (!r.ok) throw new Error(r.statusText);
+      const data = await r.json();
+      ids.forEach((id) => selectedChatIds.delete(id));
+      if (ids.includes(currentConversationId)) {
+        currentConversationId = null;
+        clearMessages();
+        setActiveConversation(null);
+      }
+      await fetchHistory();
+    } catch (err) {
+      addActivity('Delete failed: ' + err.message, 'error');
+    }
+  });
+}
+
+if (btnHistoryLoadMore) {
+  btnHistoryLoadMore.addEventListener('click', () => fetchHistory(true));
+}
 
 if (modelStatusEl) modelStatusEl.addEventListener('click', (e) => {
   e.stopPropagation();
@@ -627,6 +1379,7 @@ if (btnRetry) btnRetry.addEventListener('click', async () => {
 
 if (btnIndex) btnIndex.addEventListener('click', async () => {
   btnIndex.disabled = true;
+  btnIndex.classList.add('loading');
   await ensureBackendUrl();
   addActivity('Indexing workspace…', 'status');
   try {
@@ -646,10 +1399,11 @@ if (btnIndex) btnIndex.addEventListener('click', async () => {
     setModelStatus(false);
   }
   btnIndex.disabled = false;
+  btnIndex.classList.remove('loading');
 });
 
 const BACKEND_CONNECT_TIMEOUT_MS = 45000;
-const BACKEND_POLL_INTERVAL_MS = 2000;
+const BACKEND_POLL_INTERVAL_MS = 800;
 
 function showConnectingBanner(connecting) {
   if (!connectingBanner) return;
@@ -675,6 +1429,7 @@ async function init() {
     const p = await window.electronAPI.getProjectPath();
     setProjectPathDisplay(p);
   }
+  setPage('home');
   setActiveConversation(null);
   showConnectingBanner(true);
   let ok = await checkHealth();

@@ -9,21 +9,36 @@
 <body>
   <div class="app">
     <aside class="sidebar">
-      <nav class="sidebar-nav">
-        <a href="#" class="nav-item" data-page="home">Home</a>
-        <div class="nav-section">
-          <button type="button" class="nav-item nav-toggle" aria-expanded="true">
-            Chat
-          </button>
-          <div class="nav-sub">
-            <a href="#" class="nav-item nav-item-new-chat active" id="nav-new-chat">New chat</a>
-            <div class="history-section">
-              <div class="history-section-label">History</div>
-              <div class="history-list" id="history-list"></div>
-            </div>
+      <nav class="side-nav">
+        <button type="button" class="side-nav-item active" data-page="home">Home</button>
+        <div class="side-nav-chat-wrap">
+          <button type="button" class="side-nav-item" data-page="chat" id="nav-chat">Chat</button>
+          <div class="side-nav-sub" id="chat-sub" hidden>
+            <button type="button" class="nav-sub-item" id="nav-new-chat">New chat</button>
+            <button type="button" class="nav-sub-item" id="nav-chat-history">Chat history</button>
           </div>
         </div>
+        <button type="button" class="side-nav-item" data-page="project">Project</button>
+        <button type="button" class="side-nav-item" data-page="settings">Settings</button>
+        <button type="button" class="side-nav-item" data-page="logs">Logs</button>
       </nav>
+    </aside>
+    <aside class="history-panel" id="history-panel" hidden>
+      <div class="history-panel-header">
+        <h3 class="history-panel-title">Chat history</h3>
+        <div class="history-panel-actions">
+          <label class="history-check-wrap">
+            <input type="checkbox" class="history-select-all" id="history-select-all" title="Select all">
+            <span class="history-check-label">Select</span>
+          </label>
+          <button type="button" class="btn-history-save" id="btn-history-save" title="Save selected">Save</button>
+          <button type="button" class="btn-history-delete" id="btn-history-delete" title="Delete selected">Delete</button>
+        </div>
+      </div>
+      <div class="history-panel-list" id="history-list"></div>
+      <div class="history-load-more-wrap" id="history-load-more-wrap" hidden>
+        <button type="button" class="btn-history-load-more" id="btn-history-load-more">Load more</button>
+      </div>
     </aside>
     <main class="main">
       <div id="connecting-banner" class="connecting-banner" role="status" hidden>
@@ -31,17 +46,98 @@
         <span class="connecting-text" id="connecting-text">Starting backend…</span>
         <button type="button" id="connecting-retry" class="connecting-retry" hidden>Retry</button>
       </div>
-      <button type="button" class="btn-index" id="btn-index">Index workspace</button>
-      <div class="activity" id="activity"></div>
-      <div class="messages" id="messages"></div>
-      <footer class="bottom-bar">
+      <div class="page-content" id="page-home">
+        <div class="home-view">
+          <h1 class="home-title">AI Codec</h1>
+          <p class="home-desc">Your coding agent. Use Chat to start a conversation, or Project to manage your workspace.</p>
+        </div>
+      </div>
+      <div class="page-content" id="page-chat" hidden>
+        <div class="activity" id="activity"></div>
+        <div class="chat-content">
+          <div class="chat-welcome" id="chat-welcome">
+            <p class="chat-welcome-text">Ask your coding agent to explore, edit, or run code in your workspace.</p>
+            <div class="chat-welcome-suggestions">
+              <button type="button" class="chat-suggestion" data-prompt="Add a login form to the app">Add a login form</button>
+              <button type="button" class="chat-suggestion" data-prompt="Find where authentication is handled">Find auth logic</button>
+              <button type="button" class="chat-suggestion" data-prompt="Run the test suite and fix any failures">Run tests and fix failures</button>
+            </div>
+          </div>
+          <div class="messages" id="messages"></div>
+        </div>
+      </div>
+      <div class="page-content" id="page-settings" hidden>
+        <div class="settings-view">
+          <h2 class="settings-title">Settings</h2>
+          <div class="settings-field">
+            <label class="settings-label" for="log-path-input">Log path</label>
+            <div class="settings-input-row">
+              <input type="text" id="log-path-input" class="settings-input" placeholder="Default location">
+              <button type="button" class="btn-browse" id="btn-log-path-browse" title="Select folder">Browse</button>
+              <button type="button" class="btn-browse btn-apply" id="btn-log-path-apply" title="Apply">Apply</button>
+            </div>
+            <p class="settings-hint">Folder where app.log is stored. Use Browse to select, or type a path. Leave empty for default.</p>
+          </div>
+        </div>
+      </div>
+      <div class="page-content" id="page-logs" hidden>
+        <div class="logs-view">
+          <div class="logs-header">
+            <h2 class="logs-title">Logs</h2>
+            <button type="button" class="btn-refresh-logs" id="btn-refresh-logs">Refresh</button>
+          </div>
+          <pre class="logs-content" id="logs-content"></pre>
+        </div>
+      </div>
+      <div class="page-content" id="page-project" hidden>
+        <div class="project-view">
+          <div class="project-header">
+            <div class="project-header-row">
+              <label class="project-label">Workspace</label>
+              <button type="button" class="project-path project-path-full" id="project-path-page" title="Click to change project folder">
+                <span class="project-path-icon" aria-hidden="true"></span>
+                <span class="project-path-text" id="project-path-text-page">No folder selected</span>
+              </button>
+            </div>
+            <div class="project-header-row">
+              <button type="button" class="btn-index btn-index-block" id="btn-index">Index workspace</button>
+            </div>
+          </div>
+          <div class="project-explorer">
+            <div class="project-tree-panel">
+              <div class="project-tree-header">Files</div>
+              <div class="project-tree" id="project-tree"></div>
+            </div>
+            <div class="project-editor-panel">
+              <div class="project-editor-placeholder" id="project-editor-placeholder">Select a file to view</div>
+              <div class="project-editor-container" id="project-editor-container" hidden></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <footer class="bottom-bar" id="bottom-bar">
         <div class="top-row">
           <button type="button" class="project-path" id="project-path" title="Click to change project folder">
             <span class="project-path-icon" aria-hidden="true"></span>
             <span class="project-path-text" id="project-path-text">C:\check</span>
           </button>
           <form class="input-wrap" id="form">
-            <div class="input-hint">Ctrl+↑ / Ctrl+↓ to navigate messages</div>
+            <div class="input-hint">Enter to send · Shift+Enter new line · Ctrl+↑/↓ navigate messages</div>
+            <div class="context-types" id="context-types">
+              <button type="button" class="context-type-btn" data-type="files" title="Specific files">@Files</button>
+              <button type="button" class="context-type-btn" data-type="code" title="Code segments">@Code</button>
+              <button type="button" class="context-type-btn" data-type="codebase" title="Search project">@Codebase</button>
+              <button type="button" class="context-type-btn" data-type="docs" title="Documentation URLs">@Docs</button>
+              <button type="button" class="context-type-btn" data-type="git" title="Git history">@Git</button>
+              <button type="button" class="context-type-btn" data-type="web" title="Web search">@Web</button>
+              <button type="button" class="context-type-btn" data-type="past_chats" title="Past conversations">@Past Chats</button>
+              <button type="button" class="context-type-btn" data-type="browser" title="Browser (coming soon)">@Browser</button>
+            </div>
+            <div class="context-selector" id="context-selector" hidden>
+              <div class="context-selector-label">Context:</div>
+              <div class="context-selector-list" id="context-list"></div>
+            </div>
+            <div class="context-panels" id="context-panels"></div>
             <div class="input-row">
               <textarea id="input" rows="1" placeholder="Ask or request file changes…" disabled></textarea>
               <button type="submit" id="submit" disabled>Send</button>

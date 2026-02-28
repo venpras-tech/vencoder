@@ -87,14 +87,17 @@ def add_message(conversation_id: int, role: str, content: str) -> None:
         conn.close()
 
 
-def list_conversations() -> List[dict]:
+def list_conversations(limit: int = 100, offset: int = 0) -> tuple[List[dict], int]:
     ensure_db()
     conn = _get_conn()
     try:
+        total = conn.execute("SELECT COUNT(*) FROM conversation").fetchone()[0]
         rows = conn.execute(
-            "SELECT id, title, created_at FROM conversation ORDER BY created_at DESC"
+            "SELECT id, title, created_at FROM conversation ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            (limit, offset),
         ).fetchall()
-        return [{"id": r["id"], "title": r["title"], "created_at": r["created_at"]} for r in rows]
+        items = [{"id": r["id"], "title": r["title"], "created_at": r["created_at"]} for r in rows]
+        return items, total
     finally:
         conn.close()
 
@@ -107,5 +110,20 @@ def get_messages(conversation_id: int) -> List[dict]:
             (conversation_id,),
         ).fetchall()
         return [{"role": r["role"], "content": r["content"], "created_at": r["created_at"]} for r in rows]
+    finally:
+        conn.close()
+
+
+def delete_conversations(ids: List[int]) -> int:
+    if not ids:
+        return 0
+    ensure_db()
+    conn = _get_conn()
+    try:
+        placeholders = ",".join("?" * len(ids))
+        conn.execute(f"DELETE FROM message WHERE conversation_id IN ({placeholders})", ids)
+        conn.execute(f"DELETE FROM conversation WHERE id IN ({placeholders})", ids)
+        conn.commit()
+        return len(ids)
     finally:
         conn.close()

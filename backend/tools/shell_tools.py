@@ -1,15 +1,35 @@
 import json
+import re
 import subprocess
-from pathlib import Path
 from langchain_core.tools import tool
 from config import WORKSPACE_ROOT
 
 _UI_MARKER = "\n__UI__\n"
 
+_BLOCKED_PATTERNS = [
+    re.compile(r"rm\s+-rf\s+/(\s|$)", re.I),
+    re.compile(r"rm\s+-rf\s+\*", re.I),
+    re.compile(r"\|\s*(bash|sh)\s*$", re.I),
+    re.compile(r">\s*/dev/sd", re.I),
+    re.compile(r"mkfs\.", re.I),
+    re.compile(r":\s*\(\s*\)\s*\{", re.I),
+]
+
+
+def _validate_shell_command(cmd: str) -> str | None:
+    stripped = cmd.strip()
+    for pat in _BLOCKED_PATTERNS:
+        if pat.search(stripped):
+            return f"Blocked: command matches dangerous pattern"
+    return None
+
 
 @tool
 def shell_command(command: str, timeout_seconds: int = 120) -> str:
     """Run a shell command in the workspace directory. Use for listing files, running scripts, etc. Timeout in seconds."""
+    err = _validate_shell_command(command)
+    if err:
+        return f"Error: {err}"
     try:
         result = subprocess.run(
             command,

@@ -7,6 +7,12 @@ Electron desktop app with an AI coding agent (LangGraph + Ollama), semantic code
 - `backend/` – Python: config, tools, agent (LangGraph + Ollama), semantic_index (ChromaDB + Ollama embeddings), FastAPI server with SSE.
 - `electron/` – Electron main process, preload, renderer (chat UI, diff/shell blocks), styles.
 
+## Requirements
+
+- **Python 3.10–3.13** (Python 3.14 is not supported; ChromaDB has compatibility issues)
+- Node.js for Electron
+- Ollama for the LLM
+
 ## Run (development)
 
 1. **Backend**: From project root, set `PYTHONPATH` to the backend folder and run uvicorn:

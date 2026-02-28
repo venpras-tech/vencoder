@@ -1,0 +1,2 @@
+{"messages": [{"role": "system", "content": "You are an expert coding agent."}, {"role": "user", "content": "Add a function to parse JSON from a file."}, {"role": "assistant", "content": "Use json.load() with open(path).read() or a context manager."}]}
+{"messages": [{"role": "user", "content": "Fix the null pointer in parser.py"}, {"role": "assistant", "content": "Check the file and add a null check before the access."}]}

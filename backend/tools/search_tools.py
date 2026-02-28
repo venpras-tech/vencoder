@@ -1,20 +1,13 @@
-from pathlib import Path
 import re
 from langchain_core.tools import tool
 from config import WORKSPACE_ROOT
-
-
-def _resolve(path: str) -> Path:
-    p = (WORKSPACE_ROOT / path).resolve()
-    if not str(p).startswith(str(WORKSPACE_ROOT.resolve())):
-        raise PermissionError("Path outside workspace")
-    return p
+from .path_utils import resolve_workspace_path
 
 
 @tool
 def grep_search(pattern: str, path: str = ".", recursive: bool = True) -> str:
     """Search for a regex pattern in files. path: directory or file relative to workspace. recursive: search subdirs."""
-    root = _resolve(path)
+    root = resolve_workspace_path(path)
     if root.is_file():
         files = [root]
     else:
@@ -40,7 +33,7 @@ def grep_search(pattern: str, path: str = ".", recursive: bool = True) -> str:
 @tool
 def glob_search(pattern: str, path: str = ".") -> str:
     """Find files matching a glob pattern (e.g. '**/*.py'). path: directory relative to workspace."""
-    root = _resolve(path)
+    root = resolve_workspace_path(path)
     if not root.is_dir():
         return f"Error: not a directory: {path}"
     matches = list(root.glob(pattern))
