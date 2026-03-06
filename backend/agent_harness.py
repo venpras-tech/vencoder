@@ -46,8 +46,10 @@ async def stream_events(
     inputs = {"messages": messages}
     tool_count = 0
     stream_started = False
+    step_num = 0
 
-    yield json.dumps({"type": "phase", "phase": "processing"}) + "\n"
+    yield json.dumps({"type": "phase", "phase": "processing", "step": "Initializing…"}) + "\n"
+    yield json.dumps({"type": "step", "phase": "think", "step": 0, "message": "Planning response…"}) + "\n"
 
     try:
         astream = agent.astream_events(inputs, config=config, version="v2")
@@ -64,7 +66,16 @@ async def stream_events(
                 break
 
             kind = event.get("event")
-            if kind == "on_tool_start":
+            if kind == "on_chat_model_start":
+                step_num += 1
+                yield json.dumps({
+                    "type": "step",
+                    "phase": "think",
+                    "step": step_num,
+                    "message": "Thinking…",
+                }) + "\n"
+                yield json.dumps({"type": "phase", "phase": "think", "step": step_num}) + "\n"
+            elif kind == "on_tool_start":
                 tool_count += 1
                 if limit and tool_count > limit:
                     log.warning("max_steps exceeded: %s", limit)
@@ -75,8 +86,15 @@ async def stream_events(
                     break
                 name = event.get("name", "?")
                 log.info("tool_start: %s", name)
+                yield json.dumps({
+                    "type": "step",
+                    "phase": "action",
+                    "step": step_num,
+                    "message": f"Action: {name}",
+                    "tool": name,
+                }) + "\n"
                 yield json.dumps({"type": "tool_start", "tool": name}) + "\n"
-                yield json.dumps({"type": "status", "content": f"Calling tool: {name}"}) + "\n"
+                yield json.dumps({"type": "status", "content": f"Executing: {name}"}) + "\n"
             elif kind == "on_chat_model_stream":
                 chunk = event.get("data", {}).get("chunk", {})
                 if hasattr(chunk, "content") and chunk.content:
@@ -90,6 +108,13 @@ async def stream_events(
                 output = getattr(raw, "content", raw) if raw else ""
                 output_str = str(output) if not isinstance(output, str) else output
                 summary = output_str
+                yield json.dumps({
+                    "type": "step",
+                    "phase": "observe",
+                    "step": step_num,
+                    "message": f"Observed: {name}",
+                    "tool": name,
+                }) + "\n"
                 if "\n__UI__\n" in output_str:
                     parts = output_str.split("\n__UI__\n", 1)
                     summary = parts[0]

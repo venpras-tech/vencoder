@@ -44,6 +44,23 @@ The built app ships the backend in `resources/backend` and can bundle an embedde
 - `EMBEDDING_MODEL` – Embeddings (default `nomic-embed-text`).
 - `WORKSPACE_ROOT` – Workspace for file tools and chat DB (set by Electron when it spawns the backend).
 - `AGENT_TIMEOUT_SEC`, `AGENT_MAX_STEPS` – Optional limits.
+- `NUM_PREDICT` – Max tokens per response (0 = unlimited). Set e.g. 512 for faster replies.
+- `NUM_CTX` – Ollama context window size in tokens (default 8192). Increase for longer conversations and more context.
+- `TEMPERATURE` – Sampling temperature (default 0.1). Lower = more deterministic and accurate.
+- `REPEAT_PENALTY` – Reduces repetition (default 1.1). Higher = less repetition, faster completion.
+- `OLLAMA_KEEP_ALIVE` – How long to keep model loaded (default 10m). Reduces cold-start latency.
+
+**Best models for coding:** Use a capable coding model in Ollama for best results, e.g. `codellama`, `deepseek-coder`, `qwen2.5-coder`, `llama3.2` (general), or `mistral`. MoE models (e.g. `qwen2.5-moe`, `mixtral`) decode faster for similar quality.
+
+**Responsiveness:** For faster agent replies, use a MoE model. The agent uses file read caching, tuned prompts for fewer redundant steps, and streams Think→Action→Observe feedback.
+
+- `MULTI_AGENT_ORCHESTRATOR_ENABLED` (default true) – For complex tasks, uses a planner to break work into subtasks and runs them (in parallel when independent). Disable to always use a single agent.
+
+**Caching & performance:**
+- `KV_WARM_ENABLED` (default true) – Warms Ollama's model as you type; when you press Enter, the model is preloaded.
+- `VECTOR_CACHE_TTL` (default 300) – Seconds to cache semantic search results.
+- `CACHE_DIR` – Override cache location (default: `%APPDATA%/ai-codec/cache` on Windows). Use an SSD or RAM disk for speed.
+- `OLLAMA_DRAFT_MODEL` – For speculative decoding when Ollama adds support; reserve for future use.
 
 ## Features
 

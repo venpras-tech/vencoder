@@ -1,5 +1,8 @@
 const messagesEl = document.getElementById('messages');
 const activityEl = document.getElementById('activity');
+const activityWrap = document.getElementById('activity-wrap');
+const activityStatusLive = document.getElementById('activity-status-live');
+const backendStatusEl = document.getElementById('backend-status');
 const form = document.getElementById('form');
 const input = document.getElementById('input');
 const submit = document.getElementById('submit');
@@ -35,6 +38,9 @@ const btnRefreshLogs = document.getElementById('btn-refresh-logs');
 const logPathInput = document.getElementById('log-path-input');
 const btnLogPathBrowse = document.getElementById('btn-log-path-browse');
 const btnLogPathApply = document.getElementById('btn-log-path-apply');
+const themeLight = document.getElementById('theme-light');
+const themeDark = document.getElementById('theme-dark');
+const themeSystem = document.getElementById('theme-system');
 const connectingBanner = document.getElementById('connecting-banner');
 const connectingText = document.getElementById('connecting-text');
 const connectingRetry = document.getElementById('connecting-retry');
@@ -43,10 +49,24 @@ const chatWelcomeEl = document.getElementById('chat-welcome');
 const projectTreeEl = document.getElementById('project-tree');
 const projectEditorPlaceholder = document.getElementById('project-editor-placeholder');
 const projectEditorContainer = document.getElementById('project-editor-container');
+const contextAddFileBtn = document.getElementById('context-add-file');
 const contextSelectorEl = document.getElementById('context-selector');
 const contextListEl = document.getElementById('context-list');
+const modeSelect = document.getElementById('mode-select');
+const activityToggle = document.getElementById('activity-toggle');
+const contextPromptModal = document.getElementById('context-prompt-modal');
+const contextPromptClose = document.getElementById('context-prompt-close');
+const contextPromptCancel = document.getElementById('context-prompt-cancel');
+const contextPromptOk = document.getElementById('context-prompt-ok');
+const contextPromptTitle = document.getElementById('context-prompt-title');
+const contextPromptField1 = document.getElementById('context-prompt-field1');
+const contextPromptField2 = document.getElementById('context-prompt-field2');
+const contextPromptInput1 = document.getElementById('context-prompt-input1');
+const contextPromptInput2 = document.getElementById('context-prompt-input2');
 
 let baseUrl = '';
+let contextPromptResolve = null;
+let scrollThrottleId = null;
 let contextPaths = [];
 let contextState = {
   codebase: false,
@@ -55,17 +75,21 @@ let contextState = {
   web: '',
   past_chats: false,
   browser: false,
-  code: []
+  code: [],
+  visual: null
 };
 let currentPage = 'home';
 let messageHistory = [];
 let historyIndex = -1;
 let currentModelName = 'gpt-oss:20b';
+let currentMode = 'agent';
 let currentChatAbortController = null;
 let currentConversationId = null;
 let conversationsList = [];
 let historyTotal = 0;
 let selectedChatIds = new Set();
+const HISTORY_VIRTUAL_THRESHOLD = 50;
+let historyRenderedLimit = HISTORY_VIRTUAL_THRESHOLD;
 
 function setProjectPathDisplay(pathStr) {
   const text = pathStr || 'No folder selected';
@@ -94,7 +118,8 @@ function hasAnyContext() {
     contextState.git ||
     (contextState.web && contextState.web.trim()) ||
     contextState.past_chats ||
-    contextState.browser;
+    contextState.browser ||
+    (contextState.visual && contextState.visual.image);
 }
 
 function buildContextPayload() {
@@ -107,6 +132,7 @@ function buildContextPayload() {
   if (contextState.web && contextState.web.trim()) ctx.web = contextState.web.trim();
   if (contextState.past_chats) ctx.past_chats = true;
   if (contextState.browser) ctx.browser = true;
+  if (contextState.visual && contextState.visual.image) ctx.visual = contextState.visual;
   return Object.keys(ctx).length ? ctx : undefined;
 }
 
@@ -257,6 +283,22 @@ function renderContextList() {
     chip.appendChild(btn);
     contextListEl.appendChild(chip);
   }
+  if (contextState.visual && contextState.visual.image) {
+    const chip = document.createElement('div');
+    chip.className = 'context-chip context-chip-tag';
+    chip.textContent = '@Image';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'context-chip-remove';
+    btn.textContent = '×';
+    btn.addEventListener('click', () => {
+      contextState.visual = null;
+      renderContextList();
+      updateContextTypeButtons();
+    });
+    chip.appendChild(btn);
+    contextListEl.appendChild(chip);
+  }
 }
 
 function updateContextTypeButtons() {
@@ -270,7 +312,8 @@ function updateContextTypeButtons() {
       (t === 'git' && contextState.git) ||
       (t === 'web' && !!contextState.web) ||
       (t === 'past_chats' && contextState.past_chats) ||
-      (t === 'browser' && contextState.browser));
+      (t === 'browser' && contextState.browser) ||
+      (t === 'visual' && contextState.visual && contextState.visual.image));
   });
 }
 
@@ -305,6 +348,10 @@ function setModelName(name) {
 
 function addActivity(text, type = 'status') {
   if (!activityEl) return;
+  if (activityWrap && activityWrap.classList.contains('collapsed')) {
+    activityWrap.classList.remove('collapsed');
+    if (activityToggle) activityToggle.setAttribute('aria-expanded', 'true');
+  }
   const item = document.createElement('div');
   item.className = 'activity-item activity-' + type;
   const label = document.createElement('span');
@@ -317,6 +364,18 @@ function addActivity(text, type = 'status') {
   item.appendChild(body);
   activityEl.appendChild(item);
   activityEl.scrollTop = activityEl.scrollHeight;
+}
+
+function setBackendStatus(text) {
+  if (!backendStatusEl) return;
+  backendStatusEl.textContent = text || '';
+  backendStatusEl.hidden = !text;
+}
+
+function setActivityLiveStatus(text) {
+  if (!activityStatusLive) return;
+  activityStatusLive.textContent = text || '';
+  activityStatusLive.hidden = !text;
 }
 
 function clearActivity() {
@@ -358,8 +417,12 @@ function renderHistoryList() {
     if (bi !== -1) return 1;
     return new Date(byDate[b][0].created_at) - new Date(byDate[a][0].created_at);
   });
+  const useVirtual = conversationsList.length > HISTORY_VIRTUAL_THRESHOLD;
+  const limit = useVirtual ? historyRenderedLimit : Infinity;
+  let renderedCount = 0;
   historyListEl.innerHTML = '';
   keys.forEach((label) => {
+    if (renderedCount >= limit) return;
     const group = document.createElement('div');
     group.className = 'history-group';
     const heading = document.createElement('div');
@@ -367,6 +430,8 @@ function renderHistoryList() {
     heading.textContent = label;
     group.appendChild(heading);
     byDate[label].forEach((c) => {
+      if (renderedCount >= limit) return;
+      renderedCount++;
       const wrap = document.createElement('label');
       wrap.className = 'history-item-wrap' + (c.id === currentConversationId ? ' active' : '');
       wrap.dataset.id = String(c.id);
@@ -385,6 +450,19 @@ function renderHistoryList() {
     });
     historyListEl.appendChild(group);
   });
+  if (useVirtual && renderedCount < conversationsList.length) {
+    const showMoreBtn = document.createElement('button');
+    showMoreBtn.type = 'button';
+    showMoreBtn.className = 'btn-history-load-more';
+    showMoreBtn.textContent = `Show ${Math.min(50, conversationsList.length - renderedCount)} more`;
+    showMoreBtn.addEventListener('click', () => {
+      historyRenderedLimit += 50;
+      renderHistoryList();
+    });
+    historyListEl.appendChild(showMoreBtn);
+  } else if (useVirtual) {
+    historyRenderedLimit = conversationsList.length;
+  }
   if (historySelectAll) {
     historySelectAll.checked = conversationsList.length > 0 && conversationsList.every((c) => selectedChatIds.has(c.id));
   }
@@ -411,6 +489,10 @@ function updateSelectedFromCheckboxes() {
 }
 
 async function fetchHistory(append = false) {
+  if (!historyListEl) return;
+  if (!append) {
+    historyListEl.innerHTML = '<div class="history-loading"><div class="skeleton-line"></div><div class="skeleton-line"></div><div class="skeleton-line"></div></div>';
+  }
   try {
     const offset = append ? conversationsList.length : 0;
     const r = await fetch(baseUrl + '/history?limit=100&offset=' + offset);
@@ -422,9 +504,12 @@ async function fetchHistory(append = false) {
       conversationsList.push(...items);
     } else {
       conversationsList = items;
+      historyRenderedLimit = HISTORY_VIRTUAL_THRESHOLD;
     }
     renderHistoryList();
-  } catch (_) {}
+  } catch (_) {
+    if (!append) historyListEl.innerHTML = '<div class="history-empty">Failed to load</div>';
+  }
 }
 
 function clearMessages() {
@@ -456,6 +541,7 @@ function setHistoryPanelVisible(visible) {
 }
 
 async function loadConversation(id) {
+  if (messagesEl) messagesEl.innerHTML = '<div class="conversation-loading"><div class="skeleton-line"></div><div class="skeleton-line"></div><div class="skeleton-line"></div></div>';
   try {
     const r = await fetch(baseUrl + '/history/' + id);
     if (!r.ok) return;
@@ -464,7 +550,9 @@ async function loadConversation(id) {
     clearMessages();
     messages.forEach((m) => appendMessage(m.role, m.content));
     setActiveConversation(id);
-  } catch (_) {}
+  } catch (_) {
+    clearMessages();
+  }
 }
 
 function timeStr() {
@@ -481,7 +569,12 @@ function appendMessage(role, content) {
   time.textContent = timeStr();
   const div = document.createElement('div');
   div.className = 'msg ' + role;
-  div.textContent = content;
+  if (role === 'assistant' && content) {
+    div.innerHTML = renderMarkdown(content);
+    ensureHighlightJs().then(() => highlightCodeBlocks(div));
+  } else {
+    div.textContent = content || '';
+  }
   wrap.appendChild(time);
   wrap.appendChild(div);
   messagesEl.appendChild(wrap);
@@ -496,6 +589,83 @@ function escapeHtml(s) {
   const div = document.createElement('div');
   div.textContent = s;
   return div.innerHTML;
+}
+
+function throttleScroll() {
+  if (scrollThrottleId) return;
+  scrollThrottleId = requestAnimationFrame(() => {
+    scrollThrottleId = null;
+    if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
+  });
+}
+
+function renderMarkdown(text) {
+  if (!text || typeof text !== 'string') return '';
+  const parts = [];
+  const codeBlockRe = /```(\w*)\n([\s\S]*?)```/g;
+  let lastIndex = 0;
+  let m;
+  while ((m = codeBlockRe.exec(text)) !== null) {
+    const before = text.slice(lastIndex, m.index);
+    if (before) {
+      const escaped = escapeHtml(before).replace(/\n/g, '<br>');
+      parts.push(`<span class="md-text">${escaped}</span>`);
+    }
+    const lang = m[1] || 'plaintext';
+    const code = escapeHtml(m[2]);
+    parts.push(`<pre><code class="language-${lang}">${code}</code></pre>`);
+    lastIndex = m.index + m[0].length;
+  }
+  if (lastIndex < text.length) {
+    const rest = text.slice(lastIndex);
+    const escaped = escapeHtml(rest).replace(/\n/g, '<br>');
+    parts.push(`<span class="md-text">${escaped}</span>`);
+  }
+  const html = parts.join('');
+  return html || escapeHtml(text).replace(/\n/g, '<br>');
+}
+
+function highlightCodeBlocks(container) {
+  if (!container || !window.hljs) return;
+  container.querySelectorAll('pre code').forEach((el) => {
+    if (!el.classList.contains('hljs')) window.hljs.highlightElement(el);
+  });
+}
+
+function showContextPrompt(config) {
+  return new Promise((resolve) => {
+    contextPromptResolve = resolve;
+    contextPromptTitle.textContent = config.title || 'Add context';
+    const label1 = contextPromptField1.querySelector('.modal-label');
+    const label2 = contextPromptField2.querySelector('.modal-label');
+    label1.textContent = config.label1 || '';
+    contextPromptInput1.placeholder = config.placeholder1 || '';
+    contextPromptInput1.value = config.value1 || '';
+    if (config.label2 != null) {
+      contextPromptField2.hidden = false;
+      label2.textContent = config.label2;
+      contextPromptInput2.placeholder = config.placeholder2 || '';
+      contextPromptInput2.value = config.value2 || '';
+    } else {
+      contextPromptField2.hidden = true;
+    }
+    contextPromptModal.hidden = false;
+    contextPromptInput1.focus();
+  });
+}
+
+function closeContextPrompt(result) {
+  contextPromptModal.hidden = true;
+  if (contextPromptResolve) {
+    contextPromptResolve(result);
+    contextPromptResolve = null;
+  }
+}
+
+function resizeInput() {
+  if (!input) return;
+  input.style.height = 'auto';
+  input.style.height = Math.min(input.scrollHeight, 140) + 'px';
 }
 
 function computeLineDiff(oldStr, newStr) {
@@ -631,7 +801,14 @@ async function checkHealth() {
     const r = await fetch(baseUrl + '/health');
     if (r.ok) {
       const data = await r.json();
-      setModelStatus(data.ollama === true);
+      const ok = data.ollama === true && data.model_available !== false;
+      setModelStatus(ok);
+      if (modelStatusEl) modelStatusEl.title = data.model_available === false ? 'Model not found – click to change' : 'Click to change model';
+      if (data.model) {
+        currentModelName = data.model;
+        if (modelNameEl) modelNameEl.textContent = data.model;
+        if (modelDropdownCurrent) modelDropdownCurrent.textContent = data.model + ' – Ollama';
+      }
       return true;
     }
   } catch (_) {}
@@ -674,6 +851,10 @@ form.addEventListener('submit', async (e) => {
     steps.hidden = false;
   }
   if (blocks) blocks.innerHTML = '';
+  clearActivity();
+  setBackendStatus('Sending…');
+  setActivityLiveStatus('Sending…');
+  if (steps) addStep(steps, 'Sending request…');
 
   currentChatAbortController = new AbortController();
   if (btnCancel) btnCancel.hidden = false;
@@ -686,11 +867,19 @@ form.addEventListener('submit', async (e) => {
         message: text,
         conversation_id: currentConversationId || undefined,
         context_paths: contextPaths.length ? contextPaths : undefined,
-        context: buildContextPayload()
+        context: buildContextPayload(),
+        mode: currentMode
       }),
       signal: currentChatAbortController.signal
     });
-    if (!r.ok) throw new Error(r.statusText);
+    if (!r.ok) {
+      let msg = r.statusText;
+      try {
+        const errData = await r.json();
+        if (errData.detail) msg = errData.detail;
+      } catch (_) {}
+      throw new Error(msg);
+    }
     const reader = r.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
@@ -706,36 +895,66 @@ form.addEventListener('submit', async (e) => {
           try {
             const data = JSON.parse(line.slice(6));
             if (data.type === 'phase') {
-              if (data.phase === 'processing' && steps) addStep(steps, 'Processing your message…');
-              else if (data.phase === 'streaming') {
-                if (!streamingPhase && steps) addStep(steps, 'Writing reply…');
+              if (data.phase === 'processing' && steps) {
+                addStep(steps, data.step || 'Processing…');
+                setBackendStatus(data.step || 'Processing…');
+                setActivityLiveStatus(data.step || 'Processing…');
+              } else if (data.phase === 'think' && steps) {
+                addStep(steps, 'Think: ' + (data.step !== undefined ? 'step ' + data.step : 'Planning…'));
+                setBackendStatus('Thinking…');
+                setActivityLiveStatus('Thinking…');
+              } else if (data.phase === 'streaming') {
+                if (!streamingPhase && steps) addStep(steps, 'Reply…');
                 streamingPhase = true;
+                setBackendStatus('Streaming…');
+                setActivityLiveStatus('');
               }
+            } else if (data.type === 'step') {
+              const phase = data.phase || '';
+              const msg = data.message || '';
+              if (steps) {
+                if (phase === 'think') addStep(steps, '💭 ' + msg);
+                else if (phase === 'observe') addStep(steps, '👁 ' + msg, null, true);
+              }
+              if (phase === 'action' && msg) {
+                addActivity(msg, 'status');
+                setBackendStatus(msg);
+                setActivityLiveStatus(msg);
+              } else if (phase === 'observe' && msg) addActivity(msg, 'tool');
             } else if (data.type === 'token' && data.content) {
               if (!streamingPhase) {
                 if (steps) addStep(steps, 'Writing reply…');
                 streamingPhase = true;
               }
               bubble.textContent += data.content;
-              if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
+              throttleScroll();
             } else if (data.type === 'tool_start' && data.tool) {
-              if (steps) addStep(steps, 'Using tool: ' + data.tool);
-              addActivity('Calling tool: ' + data.tool, 'status');
+              if (steps) addStep(steps, '⚡ Action: ' + data.tool);
+              addActivity('Executing: ' + data.tool, 'status');
+              setBackendStatus('Executing: ' + data.tool);
+              setActivityLiveStatus('Executing: ' + data.tool);
             } else if (data.type === 'status' && data.content) {
               addActivity(data.content, 'status');
+              if (steps && (data.content.includes('Orchestrator') || data.content.includes('Using ') || data.content.includes('Subtask'))) {
+                addStep(steps, '📋 ' + data.content, null, data.content.includes('done') || data.content.includes('planned'));
+              }
+              setBackendStatus(data.content);
+              setActivityLiveStatus(data.content);
             } else if (data.type === 'tool_done') {
               const preview = data.preview ? (String(data.preview).slice(0, 200) + (String(data.preview).length > 200 ? '…' : '')) : '';
               if (steps) addStep(steps, 'Done: ' + data.tool, preview || null, true);
               addActivity('Done: ' + data.tool + (preview ? ' — ' + preview : ''), 'tool');
+              setBackendStatus('Done: ' + data.tool);
             } else if (data.type === 'file_edit' && blocks) {
               const block = document.createElement('div');
               block.className = 'reply-block reply-block-diff';
               const path = String(data.path || '');
+              if (path) fileContentCache.delete(path);
               const oldText = String(data.old ?? '');
               const newText = String(data.new ?? '');
               block.innerHTML = renderDiffHtml(path, oldText, newText);
               blocks.appendChild(block);
-              if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
+              throttleScroll();
             } else if (data.type === 'shell_run' && blocks) {
               const block = document.createElement('div');
               block.className = 'reply-block reply-block-shell';
@@ -750,7 +969,7 @@ form.addEventListener('submit', async (e) => {
               if (exitCode != null) outHtml += '<div class="shell-exit">Exit code: ' + escapeHtml(String(exitCode)) + '</div>';
               block.innerHTML = outHtml;
               blocks.appendChild(block);
-              if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
+              throttleScroll();
             } else if (data.type === 'error') {
               if (steps) addStep(steps, 'Error: ' + data.content, null, true);
               addActivity(data.content, 'error');
@@ -788,9 +1007,16 @@ form.addEventListener('submit', async (e) => {
   } finally {
     currentChatAbortController = null;
     if (btnCancel) btnCancel.hidden = true;
+    setBackendStatus('');
+    setActivityLiveStatus('');
   }
 
   bubble.classList.remove('streaming');
+  const finalContent = bubble.textContent || '';
+  if (finalContent) {
+    bubble.innerHTML = renderMarkdown(finalContent);
+    ensureHighlightJs().then(() => highlightCodeBlocks(bubble));
+  }
   submit.disabled = false;
   input.disabled = false;
 });
@@ -800,7 +1026,52 @@ if (btnCancel) btnCancel.addEventListener('click', () => {
   if (currentChatAbortController) currentChatAbortController.abort();
 });
 
+let warmTimeout = null;
+if (activityToggle && activityWrap) activityToggle.addEventListener('click', () => {
+  activityWrap.classList.toggle('collapsed');
+  activityToggle.setAttribute('aria-expanded', activityWrap.classList.contains('collapsed') ? 'false' : 'true');
+});
+
+if (input) {
+  input.addEventListener('input', () => resizeInput());
+  input.addEventListener('input', () => {
+    if (warmTimeout) clearTimeout(warmTimeout);
+    warmTimeout = setTimeout(async () => {
+      warmTimeout = null;
+      const text = input?.value?.trim();
+      if (!text || text.length < 10) return;
+      if (currentPage !== 'chat') return;
+      try {
+        await fetch(baseUrl + '/warm', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, model: currentModelName }),
+        });
+      } catch (_) {}
+    }, 2000);
+  });
+}
+
+if (modeSelect) {
+  modeSelect.addEventListener('change', () => {
+    currentMode = modeSelect.value || 'agent';
+    const placeholders = { agent: 'Ask or request file changes…', ask: 'Ask a question or explore the codebase…', plan: 'Describe the change for a plan (Shift+Tab)…' };
+    if (input) input.placeholder = placeholders[currentMode] || placeholders.agent;
+  });
+  currentMode = modeSelect.value || 'agent';
+}
+
 if (input) input.addEventListener('keydown', (e) => {
+  if (e.key === 'Tab' && e.shiftKey) {
+    e.preventDefault();
+    if (modeSelect) {
+      modeSelect.value = 'plan';
+      currentMode = 'plan';
+      const placeholders = { agent: 'Ask or request file changes…', ask: 'Ask a question or explore the codebase…', plan: 'Describe the change for a plan (Shift+Tab)…' };
+      input.placeholder = placeholders.plan;
+    }
+    return;
+  }
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
     if (form) form.requestSubmit();
@@ -836,6 +1107,8 @@ function openFolderHandler() {
 if (projectPathBtn) projectPathBtn.addEventListener('click', openFolderHandler);
 if (projectPathPageBtn) projectPathPageBtn.addEventListener('click', openFolderHandler);
 
+window.electronAPI?.onNavNewChat?.(() => navNewChat?.click());
+
 window.electronAPI?.onRequestOpenFolder?.(async () => {
   if (!window.electronAPI?.openFolder) return;
   const chosen = await window.electronAPI.openFolder();
@@ -857,7 +1130,7 @@ let projectSelectedPath = null;
 let highlightJsLoaded = false;
 
 async function ensureHighlightJs() {
-  if (highlightJsLoaded) return;
+  if (highlightJsLoaded) return Promise.resolve();
   try {
     const link = document.createElement('link');
     link.rel = 'stylesheet';
@@ -872,6 +1145,7 @@ async function ensureHighlightJs() {
     });
     highlightJsLoaded = true;
   } catch (_) {}
+  return Promise.resolve();
 }
 
 function renderProjectTreeItem(node, depth = 0, expanded = true) {
@@ -903,7 +1177,7 @@ function renderProjectTreeItem(node, depth = 0, expanded = true) {
 
 async function loadProjectTree() {
   if (!projectTreeEl) return;
-  projectTreeEl.innerHTML = '<div class="project-tree-loading">Loading…</div>';
+  projectTreeEl.innerHTML = '<div class="project-tree-loading"><div class="skeleton-line"></div><div class="skeleton-line"></div><div class="skeleton-line"></div></div>';
   try {
     const r = await fetch(baseUrl + '/files/tree');
     if (!r.ok) throw new Error(r.statusText);
@@ -940,10 +1214,16 @@ function renderHighlightedCode(content, language, path) {
     addCodeBtn.className = 'btn-add-context';
     addCodeBtn.textContent = '@Code';
     addCodeBtn.title = 'Add as code segment (optional line range)';
-    addCodeBtn.addEventListener('click', () => {
-      const range = prompt('Line range (e.g. 10-20, or leave empty for full file):');
+    addCodeBtn.addEventListener('click', async () => {
+      const result = await showContextPrompt({
+        title: 'Add code segment',
+        label1: 'Line range (e.g. 10-20, or leave empty for full file)',
+        placeholder1: '10-20 or empty'
+      });
+      if (result == null) return;
       let startLine = 1, endLine = 99999;
-      if (range && /^\d+-\d+$/.test(range.trim())) {
+      const range = (result.value1 || '').trim();
+      if (range && /^\d+-\d+$/.test(range)) {
         const [s, e] = range.split('-').map(Number);
         startLine = s;
         endLine = e;
@@ -974,6 +1254,20 @@ function renderHighlightedCode(content, language, path) {
   if (projectEditorPlaceholder) projectEditorPlaceholder.hidden = true;
 }
 
+const fileContentCache = new Map();
+const FILE_CACHE_MAX = 20;
+function fileCacheGet(path) {
+  const entry = fileContentCache.get(path);
+  if (!entry) return null;
+  fileContentCache.delete(path);
+  fileContentCache.set(path, entry);
+  return entry;
+}
+function fileCacheSet(path, entry) {
+  if (fileContentCache.has(path)) fileContentCache.delete(path);
+  else if (fileContentCache.size >= FILE_CACHE_MAX) fileContentCache.delete(fileContentCache.keys().next().value);
+  fileContentCache.set(path, entry);
+}
 async function loadFileInEditor(path) {
   projectSelectedPath = path;
   projectTreeEl?.querySelectorAll('.project-tree-item').forEach((el) => {
@@ -982,9 +1276,18 @@ async function loadFileInEditor(path) {
   if (projectEditorPlaceholder) projectEditorPlaceholder.hidden = true;
   if (projectEditorContainer) projectEditorContainer.hidden = false;
   try {
-    const r = await fetch(baseUrl + '/files/content?path=' + encodeURIComponent(path));
+    const headers = {};
+    const cached = fileCacheGet(path);
+    if (cached) headers['If-None-Match'] = cached.etag;
+    const r = await fetch(baseUrl + '/files/content?path=' + encodeURIComponent(path), { headers });
+    if (r.status === 304 && cached) {
+      renderHighlightedCode(cached.data.content || '', cached.data.language || 'plaintext', path);
+      return;
+    }
     if (!r.ok) throw new Error(r.statusText);
     const data = await r.json();
+    const etag = r.headers.get('ETag');
+    if (etag) fileCacheSet(path, { etag, data });
     const content = data.content || '';
     const language = data.language || 'plaintext';
     renderHighlightedCode(content, language, path);
@@ -1008,7 +1311,33 @@ projectTreeEl?.addEventListener('contextmenu', (e) => {
   addActivity('Added to context: ' + item.dataset.path, 'status');
 });
 
-document.getElementById('context-types')?.addEventListener('click', (e) => {
+if (contextAddFileBtn) {
+  contextAddFileBtn.addEventListener('click', async () => {
+    if (!window.electronAPI?.openFile) return;
+    const root = await (window.electronAPI.getProjectPath?.() || Promise.resolve(''));
+    if (!root) {
+      addActivity('Select a workspace first (Project)', 'error');
+      return;
+    }
+    const filePath = await window.electronAPI.openFile();
+    if (!filePath) return;
+    let relPath = filePath;
+    const r = root.replace(/\\/g, '/').replace(/\/$/, '');
+    const f = filePath.replace(/\\/g, '/');
+    if (f.startsWith(r + '/')) {
+      relPath = f.slice(r.length + 1);
+    } else if (f === r) {
+      return;
+    } else {
+      addActivity('File must be inside workspace', 'error');
+      return;
+    }
+    addContextPath(relPath);
+    setPage('chat');
+  });
+}
+
+document.getElementById('context-types')?.addEventListener('click', async (e) => {
   const btn = e.target.closest('.context-type-btn');
   if (!btn) return;
   const t = btn.dataset.type;
@@ -1017,16 +1346,25 @@ document.getElementById('context-types')?.addEventListener('click', (e) => {
     return;
   }
   if (t === 'code') {
-    const path = projectSelectedPath || prompt('File path (relative to workspace):');
+    const result = await showContextPrompt({
+      title: 'Add code segment',
+      label1: 'File path (relative to workspace)',
+      placeholder1: 'path/to/file.js',
+      value1: projectSelectedPath || '',
+      label2: 'Line range (e.g. 10-20, or leave empty for full file)',
+      placeholder2: '10-20 or empty'
+    });
+    if (result == null) return;
+    const path = (result.value1 || '').trim();
     if (path) {
-      const range = prompt('Line range (e.g. 10-20, or leave empty for full file):');
       let startLine = 1, endLine = 99999;
-      if (range && /^\d+-\d+$/.test(range.trim())) {
+      const range = (result.value2 || '').trim();
+      if (range && /^\d+-\d+$/.test(range)) {
         const [s, e] = range.split('-').map(Number);
         startLine = s;
         endLine = e;
       }
-      contextState.code.push({ path: path.trim(), startLine, endLine });
+      contextState.code.push({ path, startLine, endLine });
       renderContextList();
       updateContextTypeButtons();
     }
@@ -1039,35 +1377,65 @@ document.getElementById('context-types')?.addEventListener('click', (e) => {
     return;
   }
   if (t === 'docs') {
-    const url = prompt('Documentation URL:');
-    if (url && url.trim()) {
-      contextState.docs.push(url.trim());
+    const result = await showContextPrompt({
+      title: 'Add documentation',
+      label1: 'Documentation URL',
+      placeholder1: 'https://...'
+    });
+    if (result == null) return;
+    const url = (result.value1 || '').trim();
+    if (url) {
+      contextState.docs.push(url);
       renderContextList();
       updateContextTypeButtons();
     }
     return;
   }
   if (t === 'git') {
-    const mode = prompt('Git: "log" or "diff" (default: log):') || 'log';
-    const ref = prompt('Commit/ref (optional, e.g. HEAD~5):');
-    contextState.git = { diff: mode.toLowerCase() === 'diff', ref: ref?.trim() || null, n: 5 };
+    const result = await showContextPrompt({
+      title: 'Add Git context',
+      label1: 'Mode: log or diff',
+      placeholder1: 'log',
+      value1: 'log',
+      label2: 'Commit/ref (optional, e.g. HEAD~5)',
+      placeholder2: 'optional'
+    });
+    if (result == null) return;
+    const mode = (result.value1 || 'log').trim() || 'log';
+    const ref = (result.value2 || '').trim() || null;
+    contextState.git = { diff: mode.toLowerCase() === 'diff', ref, n: 5 };
     renderContextList();
     updateContextTypeButtons();
     updateContextPanels();
     return;
   }
   if (t === 'web') {
-    const q = contextState.web || prompt('Web search query:');
-    if (q !== null) {
-      contextState.web = (q || '').trim();
-      renderContextList();
-      updateContextTypeButtons();
-      updateContextPanels();
-    }
+    const result = await showContextPrompt({
+      title: 'Web search',
+      label1: 'Search query',
+      placeholder1: 'Enter search terms',
+      value1: contextState.web || ''
+    });
+    if (result == null) return;
+    contextState.web = (result.value1 || '').trim();
+    renderContextList();
+    updateContextTypeButtons();
+    updateContextPanels();
     return;
   }
   if (t === 'past_chats') {
     contextState.past_chats = !contextState.past_chats;
+    renderContextList();
+    updateContextTypeButtons();
+    return;
+  }
+  if (t === 'visual') {
+    if (!window.electronAPI?.openImage) return;
+    const imageB64 = await window.electronAPI.openImage();
+    if (imageB64) {
+      contextState.visual = { image: imageB64, interactions: [] };
+      addActivity('Image added to context. Add interactions by describing regions in your message.', 'status');
+    }
     renderContextList();
     updateContextTypeButtons();
     return;
@@ -1131,7 +1499,27 @@ function setPage(page) {
   }
 }
 
+function getEffectiveDark() {
+  const theme = document.documentElement.dataset.theme || 'system';
+  if (theme === 'dark') return true;
+  if (theme === 'light') return false;
+  return window.matchMedia('(prefers-color-scheme: dark)').matches;
+}
+
+function applyTheme() {
+  const dark = getEffectiveDark();
+  document.documentElement.classList.toggle('theme-dark', dark);
+}
+
 async function loadSettings() {
+  try {
+    const theme = window.electronAPI?.getTheme ? await window.electronAPI.getTheme() : 'system';
+    document.documentElement.dataset.theme = theme;
+    if (themeLight) themeLight.checked = theme === 'light';
+    if (themeDark) themeDark.checked = theme === 'dark';
+    if (themeSystem) themeSystem.checked = theme === 'system';
+    applyTheme();
+  } catch (_) {}
   if (!logPathInput) return;
   try {
     const dir = window.electronAPI?.getLogDir ? await window.electronAPI.getLogDir() : null;
@@ -1142,11 +1530,25 @@ async function loadSettings() {
   }
 }
 
+function setTheme(value) {
+  document.documentElement.dataset.theme = value;
+  if (window.electronAPI?.setTheme) window.electronAPI.setTheme(value);
+  applyTheme();
+}
+
 async function saveLogPath(dir) {
   if (!window.electronAPI?.setLogDir) return;
   await window.electronAPI.setLogDir(dir || null);
   if (logPathInput) logPathInput.value = dir || '';
 }
+
+if (themeLight) themeLight.addEventListener('change', () => setTheme('light'));
+if (themeDark) themeDark.addEventListener('change', () => setTheme('dark'));
+if (themeSystem) themeSystem.addEventListener('change', () => setTheme('system'));
+
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+  if ((document.documentElement.dataset.theme || 'system') === 'system') applyTheme();
+});
 
 document.querySelectorAll('.side-nav-item').forEach((el) => {
   const page = el.dataset.page;
@@ -1159,7 +1561,7 @@ if (navNewChat) {
     setPage('chat');
     currentConversationId = null;
     contextPaths = [];
-    contextState = { codebase: false, docs: [], git: null, web: '', past_chats: false, browser: false, code: [] };
+    contextState = { codebase: false, docs: [], git: null, web: '', past_chats: false, browser: false, code: [], visual: null };
     renderContextList();
     updateContextTypeButtons();
     updateContextPanels();
@@ -1362,6 +1764,40 @@ if (modelModal) modelModal.addEventListener('click', (e) => {
   if (e.target === modelModal) closeModelModal();
 });
 
+if (contextPromptOk) contextPromptOk.addEventListener('click', () => {
+  closeContextPrompt({
+    value1: contextPromptInput1?.value ?? '',
+    value2: contextPromptInput2?.value ?? ''
+  });
+});
+if (contextPromptCancel) contextPromptCancel.addEventListener('click', () => closeContextPrompt(null));
+if (contextPromptClose) contextPromptClose.addEventListener('click', () => closeContextPrompt(null));
+if (contextPromptModal) contextPromptModal.addEventListener('click', (e) => {
+  if (e.target === contextPromptModal) closeContextPrompt(null);
+});
+if (contextPromptInput1) contextPromptInput1.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !contextPromptField2?.hidden) contextPromptInput2?.focus();
+  else if (e.key === 'Enter') contextPromptOk?.click();
+});
+if (contextPromptInput2) contextPromptInput2.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') contextPromptOk?.click();
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    if (!contextPromptModal?.hidden) closeContextPrompt(null);
+    else if (!modelModal?.hidden) closeModelModal();
+  }
+  if (e.ctrlKey && e.key === 'n') {
+    e.preventDefault();
+    navNewChat?.click();
+  }
+  if (e.ctrlKey && e.key === 'Enter' && document.activeElement === input) {
+    e.preventDefault();
+    form?.requestSubmit();
+  }
+});
+
 if (btnRetry) btnRetry.addEventListener('click', async () => {
   btnRetry.disabled = true;
   const ok = await checkHealth();
@@ -1390,7 +1826,7 @@ if (btnIndex) btnIndex.addEventListener('click', async () => {
       const healthRes = await fetch(baseUrl + '/health');
       if (healthRes.ok) {
         const healthData = await healthRes.json();
-        setModelStatus(healthData.ollama === true);
+        setModelStatus(healthData.ollama === true && healthData.model_available !== false);
       }
     } else throw new Error(data.detail || 'Index failed');
   } catch (err) {
@@ -1499,6 +1935,16 @@ if (connectingRetry) {
     }, BACKEND_POLL_INTERVAL_MS);
   });
 }
+
+async function initTheme() {
+  try {
+    const theme = window.electronAPI?.getTheme ? await window.electronAPI.getTheme() : 'system';
+    document.documentElement.dataset.theme = theme;
+    applyTheme();
+  } catch (_) {}
+}
+
+initTheme();
 
 try {
   init();

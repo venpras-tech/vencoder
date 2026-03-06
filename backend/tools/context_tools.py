@@ -6,9 +6,12 @@ _SEARCH_RETRIES = 3
 _SEARCH_RETRY_DELAY = 0.5
 
 
+_MAX_CHUNK_CHARS = 4000
+
+
 @tool
-def search_context(query: str, k: int = 5) -> str:
-    """Search the semantic index for relevant code/files by meaning. Use before editing to find where things are."""
+def search_context(query: str, k: int = 6) -> str:
+    """Search the semantic index for relevant code/files by meaning. Use first when exploring. One search per task usually enough."""
     last_err = None
     for attempt in range(_SEARCH_RETRIES):
         try:
@@ -25,5 +28,8 @@ def search_context(query: str, k: int = 5) -> str:
         return "No relevant context found. Index may be empty; consider indexing the workspace."
     out = []
     for r in results:
-        out.append(f"--- {r['path']} ---\n{r['content']}")
+        content = r["content"]
+        if len(content) > _MAX_CHUNK_CHARS:
+            content = content[: _MAX_CHUNK_CHARS] + "\n[... truncated ...]"
+        out.append(f"--- {r['path']} ---\n{content}")
     return "\n\n".join(out)

@@ -3,7 +3,15 @@ import urllib.request
 from typing import Any, Optional
 
 from config import WORKSPACE_ROOT
-from file_tree import read_file_content
+from file_tree import read_file_content, get_file_structure_summary, get_project_context
+
+
+def build_file_structure_context() -> str:
+    return get_file_structure_summary()
+
+
+def build_project_context() -> str:
+    return get_project_context()
 
 
 def build_files_context(paths: list[str]) -> str:

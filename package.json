@@ -75,6 +75,7 @@
   },
   "dependencies": {
     "@highlightjs/cdn-assets": "^11.11.1",
-    "highlight.js": "^11.11.1"
+    "highlight.js": "^11.11.1",
+    "marked": "^17.0.3"
   }
 }

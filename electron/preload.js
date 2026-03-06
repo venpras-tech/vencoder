@@ -6,8 +6,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getLogPath: () => ipcRenderer.invoke('get-log-path'),
   getLogDir: () => ipcRenderer.invoke('get-log-dir'),
   setLogDir: (dir) => ipcRenderer.invoke('set-log-dir', dir),
+  getTheme: () => ipcRenderer.invoke('get-theme'),
+  setTheme: (theme) => ipcRenderer.invoke('set-theme', theme),
   readLogs: () => ipcRenderer.invoke('read-logs'),
   openFolder: () => ipcRenderer.invoke('open-folder'),
+  openFile: () => ipcRenderer.invoke('open-file'),
+  openImage: () => ipcRenderer.invoke('open-image'),
   saveFile: (defaultName, content) => ipcRenderer.invoke('save-file', defaultName, content),
   setProjectPath: (p) => ipcRenderer.send('set-project-path', p),
   onProjectPath: (cb) => {
@@ -15,6 +19,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   onRequestOpenFolder: (cb) => {
     ipcRenderer.on('request-open-folder', () => cb());
+  },
+  onNavNewChat: (cb) => {
+    ipcRenderer.on('nav-new-chat', () => cb());
   },
   splashRetry: () => ipcRenderer.send('splash-retry'),
   splashExit: () => ipcRenderer.send('splash-exit'),

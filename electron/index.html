@@ -21,6 +21,7 @@
         <button type="button" class="side-nav-item" data-page="project">Project</button>
         <button type="button" class="side-nav-item" data-page="settings">Settings</button>
         <button type="button" class="side-nav-item" data-page="logs">Logs</button>
+        <button type="button" class="side-nav-item" data-page="help">Help</button>
       </nav>
     </aside>
     <aside class="history-panel" id="history-panel" hidden>
@@ -53,7 +54,14 @@
         </div>
       </div>
       <div class="page-content" id="page-chat" hidden>
-        <div class="activity" id="activity"></div>
+        <div class="activity-wrap" id="activity-wrap">
+          <div class="activity-header">
+            <span class="activity-title" id="activity-title">Backend activity</span>
+            <span class="activity-status-live" id="activity-status-live" hidden></span>
+            <button type="button" class="activity-toggle" id="activity-toggle" title="Toggle activity panel" aria-expanded="true">▼</button>
+          </div>
+          <div class="activity" id="activity"></div>
+        </div>
         <div class="chat-content">
           <div class="chat-welcome" id="chat-welcome">
             <p class="chat-welcome-text">Ask your coding agent to explore, edit, or run code in your workspace.</p>
@@ -69,6 +77,24 @@
       <div class="page-content" id="page-settings" hidden>
         <div class="settings-view">
           <h2 class="settings-title">Settings</h2>
+          <div class="settings-field">
+            <label class="settings-label">Theme</label>
+            <div class="settings-theme-options">
+              <label class="settings-radio">
+                <input type="radio" name="theme" value="light" id="theme-light">
+                <span>Light</span>
+              </label>
+              <label class="settings-radio">
+                <input type="radio" name="theme" value="dark" id="theme-dark">
+                <span>Dark</span>
+              </label>
+              <label class="settings-radio">
+                <input type="radio" name="theme" value="system" id="theme-system">
+                <span>System</span>
+              </label>
+            </div>
+            <p class="settings-hint">System follows your OS appearance preference.</p>
+          </div>
           <div class="settings-field">
             <label class="settings-label" for="log-path-input">Log path</label>
             <div class="settings-input-row">
@@ -87,6 +113,77 @@
             <button type="button" class="btn-refresh-logs" id="btn-refresh-logs">Refresh</button>
           </div>
           <pre class="logs-content" id="logs-content"></pre>
+        </div>
+      </div>
+      <div class="page-content" id="page-help" hidden>
+        <div class="help-view">
+          <h2 class="help-title">AI Codec Help</h2>
+          <section class="help-section">
+            <h3 class="help-section-title">Modes</h3>
+            <p class="help-desc">Choose how the AI responds. Use the dropdown above the input. Aligned with Cursor/OpenCode-style workflows.</p>
+            <dl class="help-dl">
+              <dt>Agent (Role)</dt>
+              <dd>Default mode. Defines the task, clarifies when ambiguous, then implements. The AI asks 1–3 specific questions if the request is vague before coding. Uses file structure context to avoid hallucinations. Best for well-defined tasks.</dd>
+              <dt>Ask (Clarify Needs)</dt>
+              <dd>Read-only mode. Explores and answers without changes. Asks focused follow-ups when questions are vague. Use for learning, planning, and understanding code before modifying it.</dd>
+              <dt>Plan (Step-by-Step Execution Plan)</dt>
+              <dd>Creates a detailed Markdown plan before any code. Researches the codebase, asks clarifying questions, and produces a reviewable plan with file paths and numbered steps. Saves to <code>.codec-agent/plans/</code>. Use for complex, multi-file changes. <kbd>Shift+Tab</kbd> to switch quickly.</dd>
+            </dl>
+          </section>
+          <section class="help-section">
+            <h3 class="help-section-title">Context</h3>
+            <p class="help-desc">Add context so the AI has relevant information before responding. Context appears as chips below the input.</p>
+            <dl class="help-dl">
+              <dt>@Files</dt>
+              <dd>Include full file contents. Click to open Project, then right-click a file or use @Files on a selected file to add it. Paths are relative to the workspace root.</dd>
+              <dt>@Code</dt>
+              <dd>Include a code segment (file + optional line range). Use <code>10-20</code> for lines 10–20, or leave empty for the full file.</dd>
+              <dt>@Codebase</dt>
+              <dd>Semantic search over the workspace. Index first (Project → Index workspace). The AI gets relevant chunks based on your message.</dd>
+              <dt>@Docs</dt>
+              <dd>Fetch documentation from URLs. Enter one or more URLs; the AI receives the extracted text.</dd>
+              <dt>@Git</dt>
+              <dd>Include git log or diff. Choose log or diff mode and optionally a ref (e.g. <code>HEAD~5</code>).</dd>
+              <dt>@Web</dt>
+              <dd>Web search results for your query. Requires <code>duckduckgo-search</code> on the backend.</dd>
+              <dt>@Past Chats</dt>
+              <dd>Include recent messages from the current conversation as context.</dd>
+              <dt>@Image</dt>
+              <dd>Add an image for visual analysis. Uses the vision model (qwen3-vl) to process. Describe regions or elements in your message (e.g. "Change the button at top-left to blue").</dd>
+            </dl>
+          </section>
+          <section class="help-section">
+            <h3 class="help-section-title">Project</h3>
+            <p class="help-desc">Browse files, add context, and index the workspace.</p>
+            <ul class="help-ul">
+              <li><strong>Workspace</strong> – Folder used for file operations and indexing. Change via the path button.</li>
+              <li><strong>Index workspace</strong> – Build the semantic index for @Codebase. Run after opening a project or when files change.</li>
+              <li><strong>File tree</strong> – Click files to view; right-click to add to context. Use @Files and @Code buttons in the editor header.</li>
+            </ul>
+          </section>
+          <section class="help-section">
+            <h3 class="help-section-title">Keyboard Shortcuts</h3>
+            <dl class="help-dl">
+              <dt><kbd>Enter</kbd></dt>
+              <dd>Send message</dd>
+              <dt><kbd>Shift+Enter</kbd></dt>
+              <dd>New line in input</dd>
+              <dt><kbd>Ctrl+Enter</kbd></dt>
+              <dd>Send message (alternative)</dd>
+              <dt><kbd>Ctrl+N</kbd></dt>
+              <dd>New chat</dd>
+              <dt><kbd>Shift+Tab</kbd></dt>
+              <dd>Switch to Plan mode</dd>
+              <dt><kbd>Escape</kbd></dt>
+              <dd>Close modal</dd>
+              <dt><kbd>Ctrl+↑</kbd> / <kbd>Ctrl+↓</kbd></dt>
+              <dd>Navigate input history (previous/next user message)</dd>
+            </dl>
+          </section>
+          <section class="help-section">
+            <h3 class="help-section-title">Model & Backend</h3>
+            <p class="help-desc">Click the model name in the status bar to change the Ollama model. Use a capable coding model (e.g. <code>codellama</code>, <code>qwen2.5-coder</code>, <code>deepseek-coder</code>) for best results. The green dot indicates Ollama is connected.</p>
+          </section>
         </div>
       </div>
       <div class="page-content" id="page-project" hidden>
@@ -122,8 +219,8 @@
             <span class="project-path-text" id="project-path-text">C:\check</span>
           </button>
           <form class="input-wrap" id="form">
-            <div class="input-hint">Enter to send · Shift+Enter new line · Ctrl+↑/↓ navigate messages</div>
             <div class="context-types" id="context-types">
+              <button type="button" class="context-add-file" id="context-add-file" title="Add file by path">+</button>
               <button type="button" class="context-type-btn" data-type="files" title="Specific files">@Files</button>
               <button type="button" class="context-type-btn" data-type="code" title="Code segments">@Code</button>
               <button type="button" class="context-type-btn" data-type="codebase" title="Search project">@Codebase</button>
@@ -131,6 +228,7 @@
               <button type="button" class="context-type-btn" data-type="git" title="Git history">@Git</button>
               <button type="button" class="context-type-btn" data-type="web" title="Web search">@Web</button>
               <button type="button" class="context-type-btn" data-type="past_chats" title="Past conversations">@Past Chats</button>
+              <button type="button" class="context-type-btn" data-type="visual" title="Image + interactions">@Image</button>
               <button type="button" class="context-type-btn" data-type="browser" title="Browser (coming soon)">@Browser</button>
             </div>
             <div class="context-selector" id="context-selector" hidden>
@@ -138,6 +236,13 @@
               <div class="context-selector-list" id="context-list"></div>
             </div>
             <div class="context-panels" id="context-panels"></div>
+            <div class="mode-row">
+              <select id="mode-select" class="mode-select" title="Agent: implement changes. Ask: explore only. Plan: create Markdown plan (Shift+Tab)">
+                <option value="agent" selected>Agent</option>
+                <option value="ask">Ask</option>
+                <option value="plan">Plan</option>
+              </select>
+            </div>
             <div class="input-row">
               <textarea id="input" rows="1" placeholder="Ask or request file changes…" disabled></textarea>
               <button type="submit" id="submit" disabled>Send</button>
@@ -146,6 +251,7 @@
           </form>
         </div>
         <div class="status-bar">
+          <span class="backend-status" id="backend-status" aria-live="polite"></span>
           <div class="model-select-wrap">
             <button type="button" class="model-status" id="model-status" title="Click to change model">
               <span class="model-dot"></span>
@@ -163,10 +269,31 @@
             </div>
           </div>
           <button type="button" class="btn-retry" id="btn-retry">Retry connection</button>
-          <span class="mode-label">autonomous</span>
         </div>
       </footer>
     </main>
+  </div>
+  <div class="modal-overlay" id="context-prompt-modal" hidden>
+    <div class="modal context-prompt-modal" role="dialog" aria-labelledby="context-prompt-title">
+      <div class="modal-header">
+        <h2 class="modal-title" id="context-prompt-title">Add context</h2>
+        <button type="button" class="modal-close" id="context-prompt-close" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-field" id="context-prompt-field1">
+          <label class="modal-label" for="context-prompt-input1"></label>
+          <input type="text" id="context-prompt-input1" class="modal-input" placeholder="">
+        </div>
+        <div class="modal-field context-prompt-field2" id="context-prompt-field2" hidden>
+          <label class="modal-label" for="context-prompt-input2"></label>
+          <input type="text" id="context-prompt-input2" class="modal-input" placeholder="">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-modal-secondary" id="context-prompt-cancel">Cancel</button>
+        <button type="button" class="btn-modal-primary" id="context-prompt-ok">OK</button>
+      </div>
+    </div>
   </div>
   <div class="modal-overlay" id="model-modal" hidden>
     <div class="modal" role="dialog" aria-labelledby="model-modal-title">

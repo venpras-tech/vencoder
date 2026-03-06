@@ -422,6 +422,11 @@ function createWindow() {
       label: 'File',
       submenu: [
         {
+          label: 'New Chat',
+          accelerator: 'CmdOrCtrl+N',
+          click: () => mainWindow.webContents.send('nav-new-chat')
+        },
+        {
           label: 'Open Folder…',
           accelerator: 'CmdOrCtrl+O',
           click: () => mainWindow.webContents.send('request-open-folder')
@@ -550,6 +555,20 @@ ipcMain.handle('get-log-dir', () => {
   return settings.logPath || null;
 });
 
+ipcMain.handle('get-theme', () => {
+  const settings = getAppSettings();
+  const t = settings.theme;
+  return (t === 'light' || t === 'dark' || t === 'system') ? t : 'system';
+});
+
+ipcMain.handle('set-theme', (_, theme) => {
+  if (theme === 'light' || theme === 'dark' || theme === 'system') {
+    setAppSettings({ theme });
+    return true;
+  }
+  return false;
+});
+
 ipcMain.handle('set-log-dir', (_, dirPath) => {
   if (typeof dirPath === 'string') {
     const trimmed = dirPath.trim();
@@ -578,6 +597,38 @@ ipcMain.handle('open-folder', async () => {
   });
   if (result.canceled || !result.filePaths.length) return null;
   return result.filePaths[0];
+});
+
+ipcMain.handle('open-file', async () => {
+  const win = BrowserWindow.getFocusedWindow();
+  const result = await dialog.showOpenDialog(win || mainWindow, {
+    title: 'Select file to add to context',
+    defaultPath: projectPath || undefined,
+    properties: ['openFile']
+  });
+  if (result.canceled || !result.filePaths.length) return null;
+  return result.filePaths[0];
+});
+
+ipcMain.handle('open-image', async () => {
+  const win = BrowserWindow.getFocusedWindow();
+  const result = await dialog.showOpenDialog(win || mainWindow, {
+    title: 'Select image for visual context',
+    defaultPath: projectPath || undefined,
+    filters: [
+      { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'] },
+      { name: 'All', extensions: ['*'] }
+    ],
+    properties: ['openFile']
+  });
+  if (result.canceled || !result.filePaths.length) return null;
+  try {
+    const buf = fs.readFileSync(result.filePaths[0]);
+    return buf.toString('base64');
+  } catch (e) {
+    log('ERROR', 'open-image read failed', e);
+    return null;
+  }
 });
 
 ipcMain.handle('save-file', async (_, defaultName, content) => {
