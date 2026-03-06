@@ -55,6 +55,9 @@ The built app ships the backend in `resources/backend` and can bundle an embedde
 **Responsiveness:** For faster agent replies, use a MoE model. The agent uses file read caching, tuned prompts for fewer redundant steps, and streams Think→Action→Observe feedback.
 
 - `MULTI_AGENT_ORCHESTRATOR_ENABLED` (default true) – For complex tasks, uses a planner to break work into subtasks and runs them (in parallel when independent). Disable to always use a single agent.
+- `MODEL_CODER` – Model for coding tasks (default: `LLM_MODEL`). Used by multi-agent routing.
+- `MODEL_PLANNER` – Model for complex/planning tasks (default: same as `MODEL_CODER`).
+- `MODEL_VL` – Vision model for image/UI tasks (default: `qwen3-vl:8b`).
 
 **Caching & performance:**
 - `KV_WARM_ENABLED` (default true) – Warms Ollama's model as you type; when you press Enter, the model is preloaded.
@@ -65,6 +68,7 @@ The built app ships the backend in `resources/backend` and can bundle an embedde
 ## Features
 
 - Chat with history; titles generated from first message.
-- Agent tools: read_file, write_file, edit_file, delete_file, shell_command, grep_search, glob_search, search_context (semantic).
+- Agent tools: read_file, write_file, edit_file, delete_file, list_directory, shell_command, run_tests, grep_search, glob_search, web_search, search_context (semantic), git_status, git_diff.
 - Inline diff and shell output in the UI.
 - Index workspace for semantic search; switch Ollama model from the UI.
+- **Project instructions**: Add `.codec-agent/project.md` or `.codec-agent/project.txt` in your workspace to provide persistent conventions, tech stack notes, and instructions the agent follows every session.

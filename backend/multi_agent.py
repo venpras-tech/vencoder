@@ -5,16 +5,15 @@ from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage
 
 from config import (
+    MODEL_CODER,
+    MODEL_PLANNER,
+    MODEL_VL,
     OLLAMA_BASE_URL,
     OLLAMA_KEEP_ALIVE,
     PREFERRED_MODELS,
 )
 
 log = logging.getLogger("multi_agent")
-
-MODEL_CODER = "gpt-oss:20b"
-MODEL_PLANNER = "gpt-oss:20b"
-MODEL_VL = "qwen3-vl:8b"
 
 ROUTER_PROMPT = """Classify this coding request. Reply with ONLY one word, nothing else:
 - simple: quick edit, single file, fix typo, add one function

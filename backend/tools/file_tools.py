@@ -7,6 +7,28 @@ from config import MAX_READ_FILE_SIZE, WORKSPACE_ROOT
 from .path_utils import resolve_workspace_path
 
 _UI_MARKER = "\n__UI__\n"
+_LIST_IGNORE = {".git", "node_modules", "__pycache__", ".venv", "venv", ".env", "dist", "build", "chroma_data", ".codec-agent"}
+
+
+@tool
+def list_directory(path: str = ".") -> str:
+    """List files and folders in a directory. Path relative to workspace. Use '.' for workspace root."""
+    p = resolve_workspace_path(path)
+    if not p.exists():
+        return f"Error: not found: {path}"
+    if not p.is_dir():
+        return f"Error: not a directory: {path}"
+    try:
+        entries = sorted(p.iterdir(), key=lambda e: (e.is_file(), e.name.lower()))
+    except PermissionError:
+        return f"Error: permission denied: {path}"
+    lines = []
+    for e in entries:
+        if e.name in _LIST_IGNORE:
+            continue
+        suffix = "/" if e.is_dir() else ""
+        lines.append(f"{e.name}{suffix}")
+    return "\n".join(lines[:200]) if lines else "(empty)"
 _READ_CACHE: OrderedDict = OrderedDict()
 _READ_CACHE_MAX = 128
 

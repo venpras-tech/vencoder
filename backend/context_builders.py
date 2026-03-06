@@ -5,6 +5,22 @@ from typing import Any, Optional
 from config import WORKSPACE_ROOT
 from file_tree import read_file_content, get_file_structure_summary, get_project_context
 
+_PROJECT_FILE_PATHS = (".codec-agent/project.md", ".codec-agent/project.txt")
+
+
+def build_project_file_context() -> str:
+    root = WORKSPACE_ROOT.resolve()
+    for rel in _PROJECT_FILE_PATHS:
+        p = root / rel
+        if p.is_file():
+            try:
+                content = p.read_text(encoding="utf-8", errors="replace").strip()
+                if content:
+                    return f"[Project instructions - follow these conventions]\n\n{content}"
+            except OSError:
+                pass
+    return ""
+
 
 def build_file_structure_context() -> str:
     return get_file_structure_summary()

@@ -5,6 +5,32 @@ from .path_utils import resolve_workspace_path
 
 
 @tool
+def web_search(query: str, max_results: int = 5) -> str:
+    """Search the web for documentation, error messages, APIs, or general info. Use when you need up-to-date docs or to look up unknown errors."""
+    if not query or not query.strip():
+        return "Error: query is required"
+    try:
+        try:
+            from duckduckgo_search import DDGS
+        except ImportError:
+            from ddgs import DDGS
+        results = list(DDGS().text(query.strip(), max_results=max_results))
+        if not results:
+            return "No results found."
+        out = []
+        for r in results[:max_results]:
+            title = r.get("title", "")
+            body = r.get("body", "")
+            href = r.get("href", "")
+            out.append(f"• {title}\n  {body}\n  {href}")
+        return "\n\n".join(out)
+    except ImportError:
+        return "Web search requires duckduckgo-search. Install with: pip install duckduckgo-search"
+    except Exception as e:
+        return f"Web search failed: {e}"
+
+
+@tool
 def grep_search(pattern: str, path: str = ".", recursive: bool = True) -> str:
     """Search for a regex pattern in files. path: directory or file relative to workspace. recursive: search subdirs."""
     root = resolve_workspace_path(path)

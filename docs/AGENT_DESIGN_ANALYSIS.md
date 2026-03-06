@@ -103,10 +103,10 @@ Analysis of the vencoder coding agent against current best practices and recomme
 | P0 | Fix `run()` stream parsing | Small | Done |
 | P0 | Pass conversation history to agent | Medium | Done |
 | P0 | Separate step timeout from agent timeout | Small | Done |
-| P1 | Add retry for LLM (LangChain) | Small | Done |
+| P1 | Add retry for LLM (LangChain) | Small | Done (agent.py: with_retry on compiled agent) |
 | P1 | Improve prompt (tool guidance) | Small | Done |
 | P1 | `edit_file` replace_all option | Small | Done |
-| P2 | Loop/duplicate call detection | Medium | Deferred |
+| P2 | Loop/duplicate call detection | Medium | Done (tools/duplicate_wrapper.py) |
 | P2 | search_context error handling | Small | Done |
 | P2 | Retry for search_context | Small | Deferred |
 
@@ -119,3 +119,10 @@ Analysis of the vencoder coding agent against current best practices and recomme
 - **prompts.py**: Tool selection guidance (when to use search_context vs grep vs glob)
 - **file_tools.py**: `edit_file` now has `replace_all` parameter
 - **context_tools.py**: Try/except around search_context with helpful error message
+- **config.py**: MODEL_CODER, MODEL_PLANNER, MODEL_VL configurable via env (MODEL_CODER, MODEL_PLANNER, MODEL_VL)
+- **web_search tool**: Agent can search the web for docs, errors, APIs (search_tools.py)
+- **Duplicate call detection**: Wrapped tools return warning on repeated identical calls (duplicate_wrapper.py, agent_harness init_agent_run)
+- **Project context file**: .codec-agent/project.md or project.txt loaded as project instructions (context_builders.build_project_file_context)
+- **list_directory**: Browse workspace dirs (file_tools.py)
+- **git_status, git_diff**: Inspect changes on demand (git_tools.py)
+- **run_tests**: Run pytest, npm test, etc. (shell_tools.py)

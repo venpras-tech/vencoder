@@ -156,6 +156,7 @@ async def _build_message_with_context(
         build_git_context,
         build_past_chats_context,
         build_project_context,
+        build_project_file_context,
         build_web_context,
     )
     sections = []
@@ -164,6 +165,9 @@ async def _build_message_with_context(
         files.extend(context.files)
     tasks = []
     task_keys = []
+    project_file = asyncio.to_thread(build_project_file_context)
+    tasks.append(project_file)
+    task_keys.append("project_file")
     tasks.append(asyncio.to_thread(build_project_context))
     task_keys.append("project")
     if context:
@@ -193,7 +197,7 @@ async def _build_message_with_context(
     if files:
         tasks.append(asyncio.to_thread(build_files_context, files))
         task_keys.append("files")
-    order = ["project", "files", "code", "codebase", "docs", "git", "web", "past_chats"]
+    order = ["project_file", "project", "files", "code", "codebase", "docs", "git", "web", "past_chats"]
     if tasks:
         results = await asyncio.gather(*tasks, return_exceptions=True)
         result_map = {}

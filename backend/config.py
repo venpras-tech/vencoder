@@ -32,3 +32,6 @@ KV_WARM_ENABLED = os.getenv("KV_WARM_ENABLED", "true").lower() in ("1", "true", 
 OLLAMA_DRAFT_MODEL = os.getenv("OLLAMA_DRAFT_MODEL", "")
 MULTI_MODEL_ENABLED = os.getenv("MULTI_MODEL_ENABLED", "true").lower() in ("1", "true", "yes")
 MULTI_AGENT_ORCHESTRATOR_ENABLED = os.getenv("MULTI_AGENT_ORCHESTRATOR_ENABLED", "true").lower() in ("1", "true", "yes")
+MODEL_CODER = os.getenv("MODEL_CODER", os.getenv("LLM_MODEL", "gpt-oss:20b"))
+MODEL_PLANNER = os.getenv("MODEL_PLANNER", MODEL_CODER)
+MODEL_VL = os.getenv("MODEL_VL", "qwen3-vl:8b")

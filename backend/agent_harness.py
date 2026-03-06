@@ -10,6 +10,14 @@ from config import AGENT_MAX_STEPS, AGENT_TIMEOUT_SEC, MAX_HISTORY_MESSAGES, STE
 log = logging.getLogger("agent_harness")
 
 
+def _init_agent_run():
+    try:
+        from tools.agent_context import init_agent_run
+        init_agent_run()
+    except ImportError:
+        pass
+
+
 def _step_timeout_for_run(timeout_sec: Optional[int]) -> int:
     if timeout_sec is not None and timeout_sec > 0:
         return min(timeout_sec, STEP_TIMEOUT_SEC)
@@ -48,6 +56,7 @@ async def stream_events(
     stream_started = False
     step_num = 0
 
+    _init_agent_run()
     yield json.dumps({"type": "phase", "phase": "processing", "step": "Initializing…"}) + "\n"
     yield json.dumps({"type": "step", "phase": "think", "step": 0, "message": "Planning response…"}) + "\n"
 

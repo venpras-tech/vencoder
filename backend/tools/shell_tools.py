@@ -59,3 +59,9 @@ def shell_command(command: str, timeout_seconds: int = 120) -> str:
     except Exception as e:
         ui = {"type": "shell_run", "command": command, "stdout": "", "stderr": str(e), "exit_code": -1}
         return f"Error: {e}{_UI_MARKER}{json.dumps(ui)}"
+
+
+@tool
+def run_tests(command: str = "pytest", timeout_seconds: int = 120) -> str:
+    """Run tests. Default: pytest. Use npm test, cargo test, etc. based on project. Returns output and exit code."""
+    return shell_command.invoke({"command": command, "timeout_seconds": timeout_seconds})
