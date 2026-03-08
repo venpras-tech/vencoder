@@ -241,6 +241,33 @@ async def stream_agent_events_with_history(
 
     selected_model = current_model
     plan_prefix = ""
+    _conv = (message or "").strip().lower()
+    _greetings = ("hi", "hello", "hey", "hi there", "hello there", "thanks", "thank you", "bye", "ok", "okay", "yes", "no")
+    if len(_conv) <= 50 and (_conv in _greetings or _conv.rstrip("!?.") in _greetings):
+        try:
+            from langchain_ollama import ChatOllama
+            from langchain_core.messages import HumanMessage
+            llm = ChatOllama(model=current_model, base_url=OLLAMA_BASE_URL, temperature=0.3, num_predict=80)
+            reply = await asyncio.to_thread(
+                llm.invoke,
+                [HumanMessage(content=f"User said: {message}\n\nReply briefly and naturally as a friendly coding assistant. One short sentence.")],
+            )
+            content = (getattr(reply, "content", "") or str(reply)).strip()
+            if content:
+                add_message(conv_id, "assistant", content)
+                for ch in content:
+                    yield json.dumps({"type": "token", "content": ch}) + "\n"
+                if is_new:
+                    try:
+                        from title_gen import generate_chat_title
+                        title = await asyncio.to_thread(generate_chat_title, message)
+                        set_conversation_title(conv_id, title)
+                        yield json.dumps({"type": "conversation_title", "id": conv_id, "title": title}) + "\n"
+                    except Exception:
+                        pass
+                return
+        except Exception as e:
+            log.debug("conversational reply failed: %s", e)
     use_visual_flow = context and context.visual and context.visual.image
     if use_visual_flow:
         models = get_ollama_models()
@@ -271,22 +298,31 @@ async def stream_agent_events_with_history(
             log.exception("visual flow failed: %s", e)
             yield json.dumps({"type": "error", "content": str(e)}) + "\n"
             return
+    request_intent = "simple"
     if MULTI_MODEL_ENABLED:
         try:
-            from multi_agent import select_model_for_request, build_execution_plan, MODEL_PLANNER
+            from multi_agent import classify_request, build_execution_plan, MODEL_PLANNER, INTENT_HINTS
             models = get_ollama_models()
-            selected_model = await asyncio.to_thread(select_model_for_request, message, mode, models)
+            selected_model, request_intent = await asyncio.to_thread(classify_request, message, mode, models)
             if selected_model != current_model:
                 log.info("multi-model routing: %s -> %s (mode=%s)", current_model, selected_model, mode)
                 yield json.dumps({"type": "status", "content": f"Using {selected_model} for this task"}) + "\n"
-            if mode == "agent" and selected_model == MODEL_PLANNER:
+            if mode == "agent" and selected_model == MODEL_PLANNER and request_intent in ("complex", "plan"):
                 plan = await asyncio.to_thread(build_execution_plan, message, selected_model, models)
                 if plan:
                     plan_prefix = plan
-                    log.info("plan-prep: added execution plan for complex task")
+                    log.info("plan-prep: added execution plan for %s", request_intent)
         except Exception as e:
             log.debug("multi-model routing failed: %s", e)
-    agent_message = await _build_message_with_context(plan_prefix + message, context_paths, context, conv_id, mode)
+    intent_hint = ""
+    try:
+        from multi_agent import INTENT_HINTS
+        intent_hint = INTENT_HINTS.get(request_intent, "")
+        if intent_hint:
+            intent_hint = f"[Request type: {request_intent}] {intent_hint}\n\n"
+    except ImportError:
+        pass
+    agent_message = await _build_message_with_context(intent_hint + plan_prefix + message, context_paths, context, conv_id, mode)
     tokens = []
     msgs = get_messages(conv_id) if conv_id else []
     history = msgs[:-1] if msgs else []

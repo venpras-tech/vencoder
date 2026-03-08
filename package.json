@@ -2,8 +2,12 @@
   "name": "ai-codec",
   "version": "1.0.0",
   "description": "AI codec with Ollama, semantic index, and file tools",
+  "bin": {
+    "codec": "scripts/codec.js"
+  },
   "main": "electron/main.js",
   "scripts": {
+    "codec": "node scripts/codec.js",
     "start": "electron .",
     "prebuild": "node -e \"const fs=require('fs'); const p=require('path').join(__dirname,'python-runtime'); if(!fs.existsSync(p)) fs.mkdirSync(p,{recursive:true});\"",
     "build": "npm run prebuild && electron-builder",
@@ -24,6 +28,7 @@
     "files": [
       "package.json",
       "electron/**/*",
+      "scripts/**/*",
       "node_modules/@highlightjs/cdn-assets/highlight.js",
       "node_modules/@highlightjs/cdn-assets/styles/github.min.css"
     ],

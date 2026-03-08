@@ -13,6 +13,28 @@ Electron desktop app with an AI coding agent (LangGraph + Ollama), semantic code
 - Node.js for Electron
 - Ollama for the LLM
 
+## CLI (like OpenCode, Claude Code)
+
+From project root, use the `codec` command:
+
+```bash
+npm run codec -- run "fix the bug in main.py"   # one-off prompt
+npm run codec -- chat                            # interactive mode
+npm run codec -- chat -c                         # continue last session
+npm run codec -- serve                           # start API server
+npm run codec -- models                          # list Ollama models
+npm run codec -- index                           # index workspace for semantic search
+npm run codec -- session list                    # list conversations
+```
+
+Or install globally: `npm link` then run `codec` from any directory.
+
+**TUI**: Chat uses full-screen interactive TUI by default (OpenCode/Claude Code style). Use `--no-tui` for plain text:
+- Status bar: model, mode, session, working directory
+- Slash commands: /help, /models, /new, /continue, /session, /layout
+- Keybinds: F1 (help), N (new), M (models), Q (quit)
+- Dense layout: /layout for compact mode
+
 ## Run (development)
 
 1. **Backend**: From project root, set `PYTHONPATH` to the backend folder and run uvicorn:

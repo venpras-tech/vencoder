@@ -15,12 +15,27 @@ from config import (
 
 log = logging.getLogger("multi_agent")
 
-ROUTER_PROMPT = """Classify this coding request. Reply with ONLY one word, nothing else:
-- simple: quick edit, single file, fix typo, add one function
-- complex: multi-file, refactor, architecture, large change
-- plan: user wants a plan, research, or step-by-step
+ROUTER_PROMPT = """Classify this request. Reply with ONLY one word:
+- greeting: hi, hello, thanks, bye, ok—no task
+- question: how does X work, what is Y, where is Z—answer only
+- explain: explain this code, why does this happen—explain only
+- implement: add feature, create file, write code—needs edits
+- fix: fix bug, fix error, correct this—needs edits
+- plan: create plan, research, step-by-step—planning
+- complex: multi-file refactor, architecture—needs plan
 
 Message: {message}"""
+
+INTENT_HINTS = {
+    "greeting": "Respond briefly with text only. No tools.",
+    "question": "Answer with text. Use read_file/grep/search only if needed to answer. No edits.",
+    "explain": "Explain with text. Use read-only tools only if needed. No edits.",
+    "implement": "Implement the request. Use tools: read, edit, write, shell as needed.",
+    "fix": "Fix the issue. Use tools: read, edit, write, shell as needed.",
+    "plan": "Create a plan. Research first with read-only tools, then produce a plan.",
+    "complex": "Large task. Follow the execution plan. Use tools to implement.",
+    "simple": "Quick edit. Use tools: read, edit, write as needed.",
+}
 
 PLAN_PREP_PROMPT = """Given this coding request, create a brief 3-5 step execution plan. Be concise. Format as numbered list. No code.
 
@@ -29,52 +44,46 @@ Request: {message}"""
 
 def _parse_router_response(text: str) -> str:
     t = (text or "").strip().lower()
-    if "complex" in t or "plan" in t:
-        return "complex" if "complex" in t else "plan"
+    for intent in ("greeting", "question", "explain", "implement", "fix", "plan", "complex", "simple"):
+        if intent in t:
+            return intent
     return "simple"
 
 
-def select_model_for_request(
-    message: str,
-    mode: str,
-    available_models: list[str],
-) -> str:
+def classify_request(message: str, mode: str, available_models: list[str]) -> tuple[str, str]:
     models_set = set(available_models)
     coder = MODEL_CODER if MODEL_CODER in models_set else None
     planner = MODEL_PLANNER if MODEL_PLANNER in models_set else None
-    vl = MODEL_VL if MODEL_VL in models_set else None
-
     fallback = next((m for m in PREFERRED_MODELS if m in models_set), available_models[0] if available_models else None)
     if not fallback:
-        return MODEL_CODER
+        return MODEL_CODER, "simple"
+    if mode in ("plan", "ask"):
+        return (planner or coder or fallback) if mode == "plan" else (coder or planner or fallback), mode
+    try:
+        llm = ChatOllama(
+            model=coder or fallback,
+            base_url=OLLAMA_BASE_URL,
+            temperature=0,
+            num_predict=15,
+            keep_alive=OLLAMA_KEEP_ALIVE,
+        )
+        prompt = ROUTER_PROMPT.format(message=(message or "")[:400])
+        response = llm.invoke([HumanMessage(content=prompt)])
+        content = getattr(response, "content", "") or str(response)
+        intent = _parse_router_response(content)
+        if intent in ("complex", "plan"):
+            model = planner or coder or fallback
+        else:
+            model = coder or planner or fallback
+        return model, intent
+    except Exception as e:
+        log.debug("classify_request failed: %s", e)
+        return planner or coder or fallback, "simple"
 
-    if mode == "plan":
-        return planner or coder or fallback
 
-    if mode == "ask":
-        return coder or planner or fallback
-
-    if mode == "agent":
-        try:
-            llm = ChatOllama(
-                model=coder or fallback,
-                base_url=OLLAMA_BASE_URL,
-                temperature=0,
-                num_predict=10,
-                keep_alive=OLLAMA_KEEP_ALIVE,
-            )
-            prompt = ROUTER_PROMPT.format(message=(message or "")[:400])
-            response = llm.invoke([HumanMessage(content=prompt)])
-            content = getattr(response, "content", "") or str(response)
-            task_type = _parse_router_response(content)
-            if task_type in ("complex", "plan"):
-                return planner or coder or fallback
-            return coder or planner or fallback
-        except Exception as e:
-            log.debug("router failed, using planner: %s", e)
-            return planner or coder or fallback
-
-    return coder or planner or fallback
+def select_model_for_request(message: str, mode: str, available_models: list[str]) -> str:
+    model, _ = classify_request(message, mode, available_models)
+    return model
 
 
 def build_execution_plan(message: str, planner_model: str, available_models: list[str]) -> Optional[str]:
