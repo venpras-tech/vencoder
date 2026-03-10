@@ -8,7 +8,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setLogDir: (dir) => ipcRenderer.invoke('set-log-dir', dir),
   getTheme: () => ipcRenderer.invoke('get-theme'),
   setTheme: (theme) => ipcRenderer.invoke('set-theme', theme),
-  readLogs: () => ipcRenderer.invoke('read-logs'),
+  readLogs: (type) => ipcRenderer.invoke('read-logs', type),
   openFolder: () => ipcRenderer.invoke('open-folder'),
   openFile: () => ipcRenderer.invoke('open-file'),
   openImage: () => ipcRenderer.invoke('open-image'),
@@ -26,5 +26,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   splashRetry: () => ipcRenderer.send('splash-retry'),
   splashExit: () => ipcRenderer.send('splash-exit'),
   splashChoosePython: () => ipcRenderer.send('splash-choose-python'),
-  retryBackend: () => ipcRenderer.send('retry-backend')
+  retryBackend: () => ipcRenderer.send('retry-backend'),
+  getLLMProvider: () => ipcRenderer.invoke('get-llm-provider'),
+  setLLMProvider: (p) => ipcRenderer.invoke('set-llm-provider', p),
+  setLLMConfig: (cfg) => ipcRenderer.invoke('set-llm-config', cfg),
+  restartBackend: () => ipcRenderer.send('restart-backend')
 });

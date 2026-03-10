@@ -2,7 +2,10 @@ import os
 from pathlib import Path
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama")
 LLM_MODEL = os.getenv("LLM_MODEL", "gpt-oss:20b")
+_data_home = os.getenv("APPDATA") or os.getenv("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+BUILTIN_MODELS_DIR = Path(os.getenv("BUILTIN_MODELS_DIR", str(Path(_data_home) / "ai-codec" / "models")))
 PREFERRED_MODELS = ["gpt-oss:20b", "qwen3-vl:8b"]
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
 CHROMA_PERSIST_DIR = Path(os.getenv("CHROMA_PERSIST_DIR", "./chroma_data"))
@@ -23,8 +26,8 @@ _cache_dir = os.getenv("CACHE_DIR")
 if _cache_dir:
     CACHE_DIR = Path(_cache_dir).resolve()
 else:
-    _appdata = os.getenv("APPDATA") or os.getenv("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
-    CACHE_DIR = Path(_appdata) / "ai-codec" / "cache"
+    _cache_home = os.getenv("APPDATA") or os.getenv("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
+    CACHE_DIR = Path(_cache_home) / "ai-codec" / "cache"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 VECTOR_CACHE_TTL = int(os.getenv("VECTOR_CACHE_TTL", "300"))

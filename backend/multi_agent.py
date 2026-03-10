@@ -1,17 +1,10 @@
 import logging
 from typing import Optional
 
-from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage
 
-from config import (
-    MODEL_CODER,
-    MODEL_PLANNER,
-    MODEL_VL,
-    OLLAMA_BASE_URL,
-    OLLAMA_KEEP_ALIVE,
-    PREFERRED_MODELS,
-)
+from config import MODEL_CODER, MODEL_PLANNER, MODEL_VL, PREFERRED_MODELS
+from llm_builder import build_llm
 
 log = logging.getLogger("multi_agent")
 
@@ -60,13 +53,7 @@ def classify_request(message: str, mode: str, available_models: list[str]) -> tu
     if mode in ("plan", "ask"):
         return (planner or coder or fallback) if mode == "plan" else (coder or planner or fallback), mode
     try:
-        llm = ChatOllama(
-            model=coder or fallback,
-            base_url=OLLAMA_BASE_URL,
-            temperature=0,
-            num_predict=15,
-            keep_alive=OLLAMA_KEEP_ALIVE,
-        )
+        llm = build_llm(coder or fallback, temperature=0, num_predict=15)
         prompt = ROUTER_PROMPT.format(message=(message or "")[:400])
         response = llm.invoke([HumanMessage(content=prompt)])
         content = getattr(response, "content", "") or str(response)
@@ -90,13 +77,7 @@ def build_execution_plan(message: str, planner_model: str, available_models: lis
     if planner_model not in available_models:
         return None
     try:
-        llm = ChatOllama(
-            model=planner_model,
-            base_url=OLLAMA_BASE_URL,
-            temperature=0.2,
-            num_predict=200,
-            keep_alive=OLLAMA_KEEP_ALIVE,
-        )
+        llm = build_llm(planner_model, temperature=0.2, num_predict=200)
         prompt = PLAN_PREP_PROMPT.format(message=(message or "")[:500])
         response = llm.invoke([HumanMessage(content=prompt)])
         content = (getattr(response, "content", "") or str(response)).strip()

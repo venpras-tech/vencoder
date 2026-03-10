@@ -16,12 +16,16 @@
           <div class="side-nav-sub" id="chat-sub" hidden>
             <button type="button" class="nav-sub-item" id="nav-new-chat">New chat</button>
             <button type="button" class="nav-sub-item" id="nav-chat-history">Chat history</button>
+            <div class="side-nav-project" id="side-nav-project"></div>
           </div>
         </div>
         <button type="button" class="side-nav-item" data-page="project">Project</button>
         <button type="button" class="side-nav-item" data-page="settings">Settings</button>
         <button type="button" class="side-nav-item" data-page="logs">Logs</button>
         <button type="button" class="side-nav-item" data-page="help">Help</button>
+        <div class="side-nav-sep"></div>
+        <div class="side-nav-model" id="side-nav-model">Model: —</div>
+        <button type="button" class="side-nav-btn" id="nav-retry-connection" title="Retry backend connection" disabled>Retry connection</button>
       </nav>
     </aside>
     <aside class="history-panel" id="history-panel" hidden>
@@ -50,7 +54,13 @@
       <div class="page-content" id="page-home">
         <div class="home-view">
           <h1 class="home-title">AI Codec</h1>
-          <p class="home-desc">Your coding agent. Use Chat to start a conversation, or Project to manage your workspace.</p>
+          <p class="home-desc">How can I help you today?</p>
+          <div class="home-input-container" id="home-input-container"></div>
+          <div class="home-suggestions">
+            <button type="button" class="chat-suggestion" data-prompt="Add a login form to the app">Add a login form</button>
+            <button type="button" class="chat-suggestion" data-prompt="Find where authentication is handled">Find auth logic</button>
+            <button type="button" class="chat-suggestion" data-prompt="Run the test suite and fix any failures">Run tests and fix failures</button>
+          </div>
         </div>
       </div>
       <div class="page-content" id="page-chat" hidden>
@@ -110,6 +120,10 @@
         <div class="logs-view">
           <div class="logs-header">
             <h2 class="logs-title">Logs</h2>
+            <div class="logs-tabs">
+              <button type="button" class="logs-tab active" data-log-type="backend">Backend</button>
+              <button type="button" class="logs-tab" data-log-type="ui">UI</button>
+            </div>
             <button type="button" class="btn-refresh-logs" id="btn-refresh-logs">Refresh</button>
           </div>
           <pre class="logs-content" id="logs-content"></pre>
@@ -132,7 +146,7 @@
           </section>
           <section class="help-section">
             <h3 class="help-section-title">Context</h3>
-            <p class="help-desc">Add context so the AI has relevant information before responding. Context appears as chips below the input.</p>
+            <p class="help-desc">Use the context buttons below the input to add context. Context appears as chips above the buttons.</p>
             <dl class="help-dl">
               <dt>@Files</dt>
               <dd>Include full file contents. Click to open Project, then right-click a file or use @Files on a selected file to add it. Paths are relative to the workspace root.</dd>
@@ -213,62 +227,83 @@
         </div>
       </div>
       <footer class="bottom-bar" id="bottom-bar">
-        <div class="top-row">
-          <button type="button" class="project-path" id="project-path" title="Click to change project folder">
-            <span class="project-path-icon" aria-hidden="true"></span>
-            <span class="project-path-text" id="project-path-text">C:\check</span>
-          </button>
+        <div class="status-bar status-bar-top">
+          <span class="backend-status" id="backend-status" aria-live="polite"></span>
+        </div>
+        <div class="input-row-wrap">
           <form class="input-wrap" id="form">
-            <div class="context-types" id="context-types">
-              <button type="button" class="context-add-file" id="context-add-file" title="Add file by path">+</button>
-              <button type="button" class="context-type-btn" data-type="files" title="Specific files">@Files</button>
-              <button type="button" class="context-type-btn" data-type="code" title="Code segments">@Code</button>
-              <button type="button" class="context-type-btn" data-type="codebase" title="Search project">@Codebase</button>
-              <button type="button" class="context-type-btn" data-type="docs" title="Documentation URLs">@Docs</button>
-              <button type="button" class="context-type-btn" data-type="git" title="Git history">@Git</button>
-              <button type="button" class="context-type-btn" data-type="web" title="Web search">@Web</button>
-              <button type="button" class="context-type-btn" data-type="past_chats" title="Past conversations">@Past Chats</button>
-              <button type="button" class="context-type-btn" data-type="visual" title="Image + interactions">@Image</button>
-              <button type="button" class="context-type-btn" data-type="browser" title="Browser (coming soon)">@Browser</button>
+            <div class="chat-input-box">
+              <div class="chat-input-main">
+                <textarea id="input" rows="1" placeholder="Send a message"></textarea>
+              </div>
+              <div class="context-chips-row" id="context-selector" hidden>
+                <div class="context-selector-list" id="context-list"></div>
+              </div>
+              <div class="context-panels" id="context-panels"></div>
+              <div class="chat-input-footer">
+                <div class="chat-input-icons">
+                  <select id="mode-select" class="mode-select mode-select-inline" title="Agent: implement changes. Ask: explore only. Plan: create Markdown plan (Shift+Tab)">
+                    <option value="agent" selected>Agent</option>
+                    <option value="ask">Ask</option>
+                    <option value="plan">Plan</option>
+                  </select>
+                  <button type="button" class="chat-icon-btn" id="btn-model" title="Model – Switch AI model">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/></svg>
+                  </button>
+                  <button type="button" class="chat-icon-btn" id="context-project" title="Project – Open project folder and add files from workspace">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                  </button>
+                  <button type="button" class="chat-icon-btn" id="context-add-file" title="Add file – Attach a file by path">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                  </button>
+                  <button type="button" class="chat-icon-btn" data-type="code" title="Code – Add a code segment with file path and line range">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 18l6-6-6-6"/><path d="M8 6l-6 6 6 6"/></svg>
+                  </button>
+                  <button type="button" class="chat-icon-btn chat-icon-at" id="btn-context-at" title="Context – Add more context (Files, Docs, Git, Web, etc.)">@</button>
+                </div>
+                <div class="chat-input-actions">
+                  <button type="button" class="chat-icon-btn chat-icon-stt" id="btn-stt" title="Voice input – Speak your message (Whisper)">
+                    <span class="stt-icon-wrap">
+                      <svg class="stt-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                      <span class="stt-waves" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></span>
+                    </span>
+                  </button>
+                  <button type="button" id="btn-cancel" class="chat-icon-btn btn-cancel btn-cancel-hidden" title="Cancel request">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12"/></svg>
+                  </button>
+                  <button type="submit" id="submit" class="chat-icon-btn btn-send" title="Send – Send your message">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13"/><path d="M22 2L15 22L11 13L2 9L22 2Z"/></svg>
+                  </button>
+                </div>
+              </div>
             </div>
-            <div class="context-selector" id="context-selector" hidden>
-              <div class="context-selector-label">Context:</div>
-              <div class="context-selector-list" id="context-list"></div>
+            <div class="project-context-panel" id="project-context-panel" hidden>
+              <div class="project-context-header">Project context</div>
+              <div class="project-context-body">
+                <div class="project-context-path" id="project-context-path"></div>
+                <div class="project-context-actions">
+                  <button type="button" class="project-context-btn" id="project-context-open" title="Choose a folder as your workspace">Open project</button>
+                  <button type="button" class="project-context-btn" data-type="files" title="Go to Project page to add files from the file tree">Add files</button>
+                  <button type="button" class="project-context-btn" data-type="code-add-file" title="Pick a file from disk to add to context">+ Add file by path</button>
+                </div>
+              </div>
             </div>
-            <div class="context-panels" id="context-panels"></div>
-            <div class="mode-row">
-              <select id="mode-select" class="mode-select" title="Agent: implement changes. Ask: explore only. Plan: create Markdown plan (Shift+Tab)">
-                <option value="agent" selected>Agent</option>
-                <option value="ask">Ask</option>
-                <option value="plan">Plan</option>
-              </select>
-            </div>
-            <div class="input-row">
-              <textarea id="input" rows="1" placeholder="Ask or request file changes…" disabled></textarea>
-              <button type="submit" id="submit" disabled>Send</button>
-              <button type="button" id="btn-cancel" class="btn-cancel" hidden>Cancel</button>
+            <div class="context-provider-panel" id="context-provider-panel" hidden>
+              <div class="context-provider-header">Add context</div>
+              <div class="context-provider-tags" id="context-provider-tags">
+                <button type="button" class="context-provider-tag" data-type="files" title="Include full file contents">@Files</button>
+                <button type="button" class="context-provider-tag" data-type="code" title="Add file path and line range">@Code</button>
+                <button type="button" class="context-provider-tag" data-type="codebase" title="Semantic search over workspace">@Codebase</button>
+                <button type="button" class="context-provider-tag" data-type="docs" title="Documentation from URLs">@Docs</button>
+                <button type="button" class="context-provider-tag" data-type="git" title="Git log or diff">@Git</button>
+                <button type="button" class="context-provider-tag" data-type="web" title="Web search results">@Web</button>
+                <button type="button" class="context-provider-tag" data-type="past_chats" title="Recent messages from this chat">@Past Chats</button>
+                <button type="button" class="context-provider-tag" data-type="visual" title="Image for visual analysis">@Image</button>
+                <button type="button" class="context-provider-tag" data-type="browser" title="Browser context (coming soon)">@Browser</button>
+                <button type="button" class="context-provider-tag" data-type="code-add-file" title="Pick a file to add">+ Add file</button>
+              </div>
             </div>
           </form>
-        </div>
-        <div class="status-bar">
-          <span class="backend-status" id="backend-status" aria-live="polite"></span>
-          <div class="model-select-wrap">
-            <button type="button" class="model-status" id="model-status" title="Click to change model">
-              <span class="model-dot"></span>
-              <span id="model-name">gpt-oss:20b</span>
-            </button>
-            <div class="model-dropdown" id="model-dropdown" hidden>
-              <div class="model-dropdown-current">
-                <div class="model-dropdown-label">Current model</div>
-                <div class="model-dropdown-value" id="model-dropdown-current">gpt-oss:20b – Ollama</div>
-              </div>
-              <button type="button" class="model-dropdown-item" id="model-change-btn">
-                <span class="model-dropdown-item-text">Change Model</span>
-                <span class="model-dropdown-icon" aria-hidden="true"></span>
-              </button>
-            </div>
-          </div>
-          <button type="button" class="btn-retry" id="btn-retry">Retry connection</button>
         </div>
       </footer>
     </main>
@@ -309,6 +344,7 @@
           <div class="modal-select-wrapper">
             <select id="model-provider" class="modal-select">
               <option value="Ollama">Ollama</option>
+              <option value="Built-in">Built-in</option>
             </select>
           </div>
         </div>

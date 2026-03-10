@@ -1,7 +1,7 @@
-from langchain_ollama import ChatOllama
 from langgraph.prebuilt import create_react_agent
 
-from config import NUM_CTX, NUM_PREDICT, OLLAMA_BASE_URL, OLLAMA_KEEP_ALIVE, REPEAT_PENALTY, TEMPERATURE
+from config import NUM_CTX, NUM_PREDICT, REPEAT_PENALTY, TEMPERATURE
+from llm_builder import build_llm
 from prompts import (
     ASK_MODE_PROMPT,
     CODING_AGENT_SYSTEM_PROMPT,
@@ -66,20 +66,8 @@ PLAN_TOOLS = wrap_tools_with_duplicate_check([
 
 
 def build_agent(model: str, mode: str = "agent"):
-    kwargs = {
-        "temperature": TEMPERATURE,
-        "num_ctx": NUM_CTX,
-        "repeat_penalty": REPEAT_PENALTY,
-        "keep_alive": OLLAMA_KEEP_ALIVE,
-        "reasoning": False,
-    }
-    num_pred = NUM_PREDICT if NUM_PREDICT > 0 else 4096
-    kwargs["num_predict"] = num_pred
-    llm = ChatOllama(
-        model=model,
-        base_url=OLLAMA_BASE_URL,
-        **kwargs,
-    )
+    kwargs = {"reasoning": False}
+    llm = build_llm(model, **kwargs)
     if mode == "ask":
         agent = create_react_agent(llm, ASK_TOOLS, prompt=ASK_MODE_PROMPT)
     elif mode == "plan":

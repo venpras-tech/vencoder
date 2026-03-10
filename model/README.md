@@ -77,7 +77,7 @@ python finetune.py --max-steps 60 --output-dir outputs
 ```
 
 Options:
-- `--dataset`: HuggingFace dataset or path to local JSON/JSONL (ShareGPT format)
+- `--dataset`: Dataset ID or path to local JSON/JSONL (ShareGPT format)
 - `--max-steps`: Training steps (default: 60)
 - `--max-seq-length`: Context length (default: 4096)
 - `--batch-size`: Per-device batch size (default: 4)

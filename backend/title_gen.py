@@ -1,7 +1,7 @@
-from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from config import LLM_MODEL, OLLAMA_BASE_URL
+from config import LLM_MODEL
+from llm_builder import build_llm
 from prompts import CHAT_TITLE_PROMPT
 
 
@@ -9,7 +9,7 @@ def generate_chat_title(first_message: str, model: str = None) -> str:
     if not first_message or not first_message.strip():
         return "New chat"
     model = model or LLM_MODEL
-    llm = ChatOllama(model=model, base_url=OLLAMA_BASE_URL, temperature=0.3)
+    llm = build_llm(model, temperature=0.3)
     try:
         response = llm.invoke(
             [

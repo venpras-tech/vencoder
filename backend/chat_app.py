@@ -152,13 +152,13 @@ class ChatApp(App):
 
     def _show_models(self) -> None:
         try:
-            from server import get_ollama_models
-            models = get_ollama_models()
+            from server import get_available_models
+            models = get_available_models()
             if not models:
-                self._add_error("No models. Ensure Ollama is running.")
+                self._add_error("No models. Ensure Ollama is running or add GGUF files to the models folder.")
                 return
             log = self.query_one("#chat", RichLog)
-            table = Table(title="Ollama Models")
+            table = Table(title="Models")
             table.add_column("Model", style="cyan")
             for m in models[:20]:
                 table.add_row(m)

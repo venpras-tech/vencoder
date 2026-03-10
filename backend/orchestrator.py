@@ -4,10 +4,9 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, AsyncGenerator, Optional
 
-from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage
 
-from config import OLLAMA_BASE_URL, OLLAMA_KEEP_ALIVE
+from llm_builder import build_llm
 from multi_agent import MODEL_CODER, MODEL_PLANNER
 
 log = logging.getLogger("orchestrator")
@@ -88,13 +87,7 @@ def _plan_subtasks(
                 models_to_try.append(m)
     for model in models_to_try:
         try:
-            llm = ChatOllama(
-                model=model,
-                base_url=OLLAMA_BASE_URL,
-                temperature=0.1,
-                num_predict=600,
-                keep_alive=OLLAMA_KEEP_ALIVE,
-            )
+            llm = build_llm(model, temperature=0.1, num_predict=600)
             prompt = PLANNER_PROMPT.format(message=(message or "")[:600])
             full = f"[Project context - use for file paths]\n{project_context[:2000]}\n\n{prompt}" if project_context else prompt
             response = llm.invoke([HumanMessage(content=full)])

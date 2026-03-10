@@ -4,7 +4,5 @@ numpy
 bitsandbytes
 peft
 trl
-datasets
 accelerate
-transformers
 unsloth

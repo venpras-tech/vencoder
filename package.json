@@ -30,7 +30,7 @@
       "electron/**/*",
       "scripts/**/*",
       "node_modules/@highlightjs/cdn-assets/highlight.js",
-      "node_modules/@highlightjs/cdn-assets/styles/github.min.css"
+      "node_modules/@highlightjs/cdn-assets/styles/github-dark.min.css"
     ],
     "extraResources": [
       {

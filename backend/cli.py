@@ -230,10 +230,10 @@ async def _run_chat(args, model_override=None):
 def _cmd_models():
     _ensure_workspace()
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from server import get_ollama_models
-    models = get_ollama_models()
+    from server import get_available_models
+    models = get_available_models()
     if not models:
-        print("No models found. Ensure Ollama is running and you have pulled a model.")
+        print("No models found. Ensure Ollama is running or add GGUF files to the models folder.")
         return
     for m in models:
         print(m)

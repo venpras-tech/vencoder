@@ -1,16 +1,26 @@
 #!/usr/bin/env python3
-import os
+import json
 import argparse
 import torch
 from unsloth import FastLanguageModel
-from datasets import load_dataset
+from datasets import Dataset
 from trl import SFTConfig, SFTTrainer
 from unsloth.chat_templates import standardize_sharegpt
 
 
+def load_local_dataset(path: str) -> Dataset:
+    with open(path, encoding="utf-8") as f:
+        if path.lower().endswith(".jsonl"):
+            records = [json.loads(line) for line in f if line.strip()]
+        else:
+            data = json.load(f)
+            records = data if isinstance(data, list) else [data]
+    return Dataset.from_list(records)
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", default="HuggingFaceH4/Multilingual-Thinking", help="HuggingFace dataset or path to local JSON/JSONL")
+    parser.add_argument("--dataset", required=True, help="Path to local JSON/JSONL (ShareGPT format)")
     parser.add_argument("--max-steps", type=int, default=60)
     parser.add_argument("--max-seq-length", type=int, default=4096)
     parser.add_argument("--output-dir", default="outputs")
@@ -44,16 +54,7 @@ def main():
         loftq_config=None,
     )
 
-    if os.path.exists(args.dataset):
-        ext = os.path.splitext(args.dataset)[1].lower()
-        if ext == ".json":
-            dataset = load_dataset("json", data_files=args.dataset, split="train")
-        elif ext == ".jsonl":
-            dataset = load_dataset("json", data_files=args.dataset, split="train")
-        else:
-            dataset = load_dataset(args.dataset, split="train")
-    else:
-        dataset = load_dataset(args.dataset, split="train")
+    dataset = load_local_dataset(args.dataset)
 
     def format_prompts(examples):
         convos = examples["messages"]

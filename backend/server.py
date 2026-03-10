@@ -3,7 +3,7 @@ import json
 import urllib.request
 from typing import AsyncGenerator, Optional
 
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -20,11 +20,13 @@ from chat_db import (
 from config import (
     KV_WARM_ENABLED,
     LLM_MODEL,
+    LLM_PROVIDER,
     MULTI_AGENT_ORCHESTRATOR_ENABLED,
     MULTI_MODEL_ENABLED,
     OLLAMA_BASE_URL,
     PREFERRED_MODELS,
 )
+from llm_builder import get_builtin_models
 from file_tree import get_file_tree, read_file_content
 
 try:
@@ -62,7 +64,17 @@ def get_ollama_models():
         return []
 
 
-models = get_ollama_models()
+def get_provider() -> str:
+    return (LLM_PROVIDER or "ollama").lower()
+
+
+def get_available_models() -> list[str]:
+    if get_provider() == "builtin":
+        return get_builtin_models()
+    return get_ollama_models()
+
+
+models = get_available_models()
 if models and current_model not in models:
     for m in PREFERRED_MODELS:
         if m in models:
@@ -128,16 +140,21 @@ class DeleteHistoryRequest(BaseModel):
 
 
 def model_exists(name: str) -> bool:
-    return name in get_ollama_models()
+    return name in get_available_models()
 
 
 def ensure_model_exists(model: str) -> None:
-    models = get_ollama_models()
+    models = get_available_models()
     if model in models:
         return
-    hint = f"Model '{model}' not found. Run: ollama pull {model}"
-    if models:
-        hint += f" — or switch to an available model: {', '.join(models[:8])}{'...' if len(models) > 8 else ''}"
+    if get_provider() == "builtin":
+        hint = f"Model '{model}' not found. Add a GGUF file to the models folder."
+        if models:
+            hint += f" Available: {', '.join(models[:8])}{'...' if len(models) > 8 else ''}"
+    else:
+        hint = f"Model '{model}' not found. Run: ollama pull {model}"
+        if models:
+            hint += f" — or switch to an available model: {', '.join(models[:8])}{'...' if len(models) > 8 else ''}"
     raise HTTPException(status_code=400, detail=hint)
 
 
@@ -245,9 +262,9 @@ async def stream_agent_events_with_history(
     _greetings = ("hi", "hello", "hey", "hi there", "hello there", "thanks", "thank you", "bye", "ok", "okay", "yes", "no")
     if len(_conv) <= 50 and (_conv in _greetings or _conv.rstrip("!?.") in _greetings):
         try:
-            from langchain_ollama import ChatOllama
             from langchain_core.messages import HumanMessage
-            llm = ChatOllama(model=current_model, base_url=OLLAMA_BASE_URL, temperature=0.3, num_predict=80)
+            from llm_builder import build_llm
+            llm = build_llm(current_model, temperature=0.3, num_predict=80)
             reply = await asyncio.to_thread(
                 llm.invoke,
                 [HumanMessage(content=f"User said: {message}\n\nReply briefly and naturally as a friendly coding assistant. One short sentence.")],
@@ -270,7 +287,7 @@ async def stream_agent_events_with_history(
             log.debug("conversational reply failed: %s", e)
     use_visual_flow = context and context.visual and context.visual.image
     if use_visual_flow:
-        models = get_ollama_models()
+        models = get_available_models()
         try:
             from visual_agents import process_visual_request, MODEL_VL
             if MODEL_VL in models or any(m in models for m in ["llava", "llama3.2-vision", "qwen3-vl"]):
@@ -302,7 +319,7 @@ async def stream_agent_events_with_history(
     if MULTI_MODEL_ENABLED:
         try:
             from multi_agent import classify_request, build_execution_plan, MODEL_PLANNER, INTENT_HINTS
-            models = get_ollama_models()
+            models = get_available_models()
             selected_model, request_intent = await asyncio.to_thread(classify_request, message, mode, models)
             if selected_model != current_model:
                 log.info("multi-model routing: %s -> %s (mode=%s)", current_model, selected_model, mode)
@@ -339,7 +356,7 @@ async def stream_agent_events_with_history(
         try:
             from context_builders import build_project_context
             from orchestrator import run_orchestrated
-            models = get_ollama_models()
+            models = get_available_models()
             project_ctx = await asyncio.to_thread(build_project_context)
             async for chunk in run_orchestrated(
                 message,
@@ -436,17 +453,22 @@ def warm_cache(req: Optional[WarmRequest] = None):
 
 @app.get("/health")
 def health():
+    provider = get_provider()
     ollama_ok = False
     model_available = False
-    try:
-        req = urllib.request.Request(f"{OLLAMA_BASE_URL}/api/tags", method="GET")
-        with urllib.request.urlopen(req, timeout=2) as r:
-            if r.status == 200:
-                ollama_ok = True
-                model_available = model_exists(current_model)
-    except Exception as e:
-        log.debug("health ollama check failed: %s", e)
-    return {"status": "ok", "ollama": ollama_ok, "model_available": model_available, "model": current_model}
+    if provider == "builtin":
+        model_available = model_exists(current_model)
+        ollama_ok = True
+    else:
+        try:
+            req = urllib.request.Request(f"{OLLAMA_BASE_URL}/api/tags", method="GET")
+            with urllib.request.urlopen(req, timeout=2) as r:
+                if r.status == 200:
+                    ollama_ok = True
+                    model_available = model_exists(current_model)
+        except Exception as e:
+            log.debug("health ollama check failed: %s", e)
+    return {"status": "ok", "ollama": ollama_ok, "model_available": model_available, "model": current_model, "provider": provider}
 
 
 @app.get("/history")
@@ -524,7 +546,7 @@ async def chat_run(req: ChatRequest):
         if MULTI_MODEL_ENABLED:
             try:
                 from multi_agent import select_model_for_request
-                models = get_ollama_models()
+                models = get_available_models()
                 selected_model = await asyncio.to_thread(select_model_for_request, req.message, mode, models)
             except Exception:
                 pass
@@ -536,26 +558,37 @@ async def chat_run(req: ChatRequest):
 
 
 @app.get("/models")
-def list_models():
-    models = get_ollama_models()
-    return {"provider": "Ollama", "models": models}
+def list_models(provider: Optional[str] = None):
+    if provider:
+        p = provider.lower()
+        if p == "builtin":
+            models = get_builtin_models()
+            return {"provider": "Built-in", "models": models}
+        if p == "ollama":
+            models = get_ollama_models()
+            return {"provider": "Ollama", "models": models}
+    models = get_available_models()
+    prov = "Built-in" if get_provider() == "builtin" else "Ollama"
+    return {"provider": prov, "models": models}
 
 
 @app.get("/model")
 def get_model():
-    return {"provider": "Ollama", "model": current_model}
+    provider = "Built-in" if get_provider() == "builtin" else "Ollama"
+    return {"provider": provider, "model": current_model}
 
 
 @app.patch("/model")
 def set_model(req: ModelUpdate):
     global _agent_cache, current_model
-    models = get_ollama_models()
+    models = get_available_models()
     if models and req.model not in models:
         raise HTTPException(status_code=400, detail=f"Model not found: {req.model}. Available: {', '.join(models[:10])}{'...' if len(models) > 10 else ''}")
     current_model = req.model
     _agent_cache.clear()
     log.info("model set to %s", current_model)
-    return {"provider": "Ollama", "model": current_model}
+    provider = "Built-in" if get_provider() == "builtin" else "Ollama"
+    return {"provider": provider, "model": current_model}
 
 
 def _etag_for_tree(tree: list) -> str:
@@ -635,6 +668,23 @@ async def index_workspace():
         return {"status": "ok", "indexed": count}
     except Exception as e:
         log.exception("index_workspace failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/transcribe")
+async def transcribe(audio: UploadFile = File(...), language: Optional[str] = None):
+    try:
+        data = await audio.read()
+        if not data:
+            raise HTTPException(status_code=400, detail="No audio data")
+        from transcribe import transcribe_audio
+        text = await asyncio.to_thread(transcribe_audio, data, language or None)
+        return {"text": text}
+    except ImportError as e:
+        log.exception("transcribe import failed: %s", e)
+        raise HTTPException(status_code=503, detail="Whisper not available. Install: pip install faster-whisper")
+    except Exception as e:
+        log.exception("transcribe failed: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
 
 

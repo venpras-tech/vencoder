@@ -3,10 +3,10 @@ import json
 import logging
 from typing import Any, Optional
 
-from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage
 
-from config import OLLAMA_BASE_URL, OLLAMA_KEEP_ALIVE, PREFERRED_MODELS
+from config import PREFERRED_MODELS
+from llm_builder import build_llm
 from multi_agent import MODEL_VL
 from visual_context import build_visual_instruction, build_visual_message_content
 
@@ -104,13 +104,7 @@ def route_visual_task(
         return {"task": "analysis", "subtasks": [], "model": fallback}
     model = orchestrator or vl or fallback
     try:
-        llm = ChatOllama(
-            model=model,
-            base_url=OLLAMA_BASE_URL,
-            temperature=0,
-            num_predict=150,
-            keep_alive=OLLAMA_KEEP_ALIVE,
-        )
+        llm = build_llm(model, temperature=0, num_predict=150)
         if model == VISUAL_ORCHESTRATOR_MODEL:
             text = build_visual_instruction(message, image_b64, interactions)
             content = text
@@ -137,13 +131,7 @@ def run_visual_subagent(
     instruction = build_visual_instruction(message, image_b64, interactions)
     content = build_visual_message_content(message, image_b64, interactions)
     try:
-        llm = ChatOllama(
-            model=model,
-            base_url=OLLAMA_BASE_URL,
-            temperature=0.2,
-            num_predict=4096,
-            keep_alive=OLLAMA_KEEP_ALIVE,
-        )
+        llm = build_llm(model, temperature=0.2, num_predict=4096)
         full = f"{system}\n\n{instruction}"
         content_with_system = [b for b in content if b.get("type") == "image_url"]
         content_with_system.append({"type": "text", "text": full})

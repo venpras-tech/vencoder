@@ -1,3 +1,12 @@
+(function () {
+  try {
+    const t = localStorage.getItem('app-theme');
+    const dark = t === 'dark' || (t !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.classList.toggle('theme-dark', dark);
+    document.documentElement.dataset.theme = t || 'system';
+  } catch (_) {}
+})();
+
 const messagesEl = document.getElementById('messages');
 const activityEl = document.getElementById('activity');
 const activityWrap = document.getElementById('activity-wrap');
@@ -6,27 +15,22 @@ const backendStatusEl = document.getElementById('backend-status');
 const form = document.getElementById('form');
 const input = document.getElementById('input');
 const submit = document.getElementById('submit');
-const modelStatusEl = document.getElementById('model-status');
-const modelNameEl = document.getElementById('model-name');
-const modelDropdown = document.getElementById('model-dropdown');
-const modelDropdownCurrent = document.getElementById('model-dropdown-current');
-const modelChangeBtn = document.getElementById('model-change-btn');
 const modelModal = document.getElementById('model-modal');
 const modelModalClose = document.getElementById('model-modal-close');
 const modelModalSave = document.getElementById('model-modal-save');
 const modelSelect = document.getElementById('model-select');
+const modelProviderSelect = document.getElementById('model-provider');
 const btnIndex = document.getElementById('btn-index');
-const btnRetry = document.getElementById('btn-retry');
 const btnCancel = document.getElementById('btn-cancel');
-const projectPathBtn = document.getElementById('project-path');
-const projectPathText = document.getElementById('project-path-text');
 const projectPathPageBtn = document.getElementById('project-path-page');
 const projectPathTextPage = document.getElementById('project-path-text-page');
 const historyListEl = document.getElementById('history-list');
 const navNewChat = document.getElementById('nav-new-chat');
 const navChat = document.getElementById('nav-chat');
 const chatSub = document.getElementById('chat-sub');
+const sideNavProject = document.getElementById('side-nav-project');
 const navChatHistory = document.getElementById('nav-chat-history');
+const navRetryConnection = document.getElementById('nav-retry-connection');
 const historyPanel = document.getElementById('history-panel');
 const historySelectAll = document.getElementById('history-select-all');
 const btnHistorySave = document.getElementById('btn-history-save');
@@ -49,7 +53,6 @@ const chatWelcomeEl = document.getElementById('chat-welcome');
 const projectTreeEl = document.getElementById('project-tree');
 const projectEditorPlaceholder = document.getElementById('project-editor-placeholder');
 const projectEditorContainer = document.getElementById('project-editor-container');
-const contextAddFileBtn = document.getElementById('context-add-file');
 const contextSelectorEl = document.getElementById('context-selector');
 const contextListEl = document.getElementById('context-list');
 const modeSelect = document.getElementById('mode-select');
@@ -82,6 +85,7 @@ let currentPage = 'home';
 let messageHistory = [];
 let historyIndex = -1;
 let currentModelName = 'gpt-oss:20b';
+let currentProvider = 'Ollama';
 let currentMode = 'agent';
 let currentChatAbortController = null;
 let currentConversationId = null;
@@ -93,8 +97,11 @@ let historyRenderedLimit = HISTORY_VIRTUAL_THRESHOLD;
 
 function setProjectPathDisplay(pathStr) {
   const text = pathStr || 'No folder selected';
-  if (projectPathText) projectPathText.textContent = text;
   if (projectPathTextPage) projectPathTextPage.textContent = text;
+  if (sideNavProject) {
+    sideNavProject.textContent = text;
+    sideNavProject.title = pathStr || '';
+  }
 }
 
 function addContextPath(path) {
@@ -302,18 +309,20 @@ function renderContextList() {
 }
 
 function updateContextTypeButtons() {
-  document.querySelectorAll('.context-type-btn').forEach((btn) => {
+  const isActive = (t) =>
+    (t === 'files' && contextPaths.length > 0) ||
+    (t === 'code' && contextState.code.length > 0) ||
+    (t === 'codebase' && contextState.codebase) ||
+    (t === 'docs' && contextState.docs.length > 0) ||
+    (t === 'git' && contextState.git) ||
+    (t === 'web' && !!contextState.web) ||
+    (t === 'past_chats' && contextState.past_chats) ||
+    (t === 'browser' && contextState.browser) ||
+    (t === 'visual' && contextState.visual && contextState.visual.image);
+  document.querySelectorAll('.context-provider-tag').forEach((btn) => {
     const t = btn.dataset.type;
-    btn.classList.toggle('active',
-      (t === 'files' && contextPaths.length > 0) ||
-      (t === 'code' && contextState.code.length > 0) ||
-      (t === 'codebase' && contextState.codebase) ||
-      (t === 'docs' && contextState.docs.length > 0) ||
-      (t === 'git' && contextState.git) ||
-      (t === 'web' && !!contextState.web) ||
-      (t === 'past_chats' && contextState.past_chats) ||
-      (t === 'browser' && contextState.browser) ||
-      (t === 'visual' && contextState.visual && contextState.visual.image));
+    if (!t) return;
+    btn.classList.toggle('active', isActive(t));
   });
 }
 
@@ -337,16 +346,32 @@ function updateContextPanels() {
 }
 
 function setModelStatus(connected) {
-  if (modelStatusEl) modelStatusEl.classList.toggle('error', !connected);
+  if (navRetryConnection) navRetryConnection.disabled = connected;
 }
 
-function setModelName(name) {
+function setModelName(name, provider) {
   currentModelName = name || 'gpt-oss:20b';
-  modelNameEl.textContent = currentModelName;
-  if (modelDropdownCurrent) modelDropdownCurrent.textContent = currentModelName + ' – Ollama';
+  currentProvider = provider || 'Ollama';
+  const sideNavModel = document.getElementById('side-nav-model');
+  if (sideNavModel) sideNavModel.textContent = `Model: ${currentModelName} – ${currentProvider}`;
 }
+
+const uiLogBuffer = [];
+const UI_LOG_MAX = 2000;
+
+function appendUiLog(text, type = 'status') {
+  const ts = new Date().toISOString();
+  const label = type === 'tool' ? 'Tool' : type === 'error' ? 'Error' : type === 'index' ? 'Index' : 'Status';
+  uiLogBuffer.push(`${ts} [${label}] ${text}`);
+  if (uiLogBuffer.length > UI_LOG_MAX) uiLogBuffer.shift();
+}
+
+window.addEventListener('error', (e) => {
+  appendUiLog((e.message || String(e)) + (e.filename ? ' at ' + e.filename + ':' + e.lineno : ''), 'error');
+});
 
 function addActivity(text, type = 'status') {
+  appendUiLog(text, type);
   if (!activityEl) return;
   if (activityWrap && activityWrap.classList.contains('collapsed')) {
     activityWrap.classList.remove('collapsed');
@@ -572,6 +597,7 @@ function appendMessage(role, content) {
   if (role === 'assistant' && content) {
     div.innerHTML = renderMarkdown(content);
     ensureHighlightJs().then(() => highlightCodeBlocks(div));
+    attachCodeBlockCopyHandlers(div);
   } else {
     div.textContent = content || '';
   }
@@ -611,9 +637,9 @@ function renderMarkdown(text) {
       const escaped = escapeHtml(before).replace(/\n/g, '<br>');
       parts.push(`<span class="md-text">${escaped}</span>`);
     }
-    const lang = m[1] || 'plaintext';
+    const lang = (m[1] || 'plaintext').toLowerCase();
     const code = escapeHtml(m[2]);
-    parts.push(`<pre><code class="language-${lang}">${code}</code></pre>`);
+    parts.push(`<div class="code-block"><div class="code-block-header"><span class="code-block-lang">${lang}</span><button type="button" class="code-block-copy" title="Copy">Copy</button></div><pre><code class="language-${lang}">${code}</code></pre></div>`);
     lastIndex = m.index + m[0].length;
   }
   if (lastIndex < text.length) {
@@ -623,6 +649,24 @@ function renderMarkdown(text) {
   }
   const html = parts.join('');
   return html || escapeHtml(text).replace(/\n/g, '<br>');
+}
+
+function attachCodeBlockCopyHandlers(container) {
+  if (!container) return;
+  container.querySelectorAll('.code-block-copy').forEach((btn) => {
+    if (btn.dataset.copied) return;
+    btn.dataset.copied = '1';
+    btn.addEventListener('click', () => {
+      const block = btn.closest('.code-block');
+      const code = block?.querySelector('code');
+      if (!code) return;
+      navigator.clipboard.writeText(code.textContent).then(() => {
+        const orig = btn.textContent;
+        btn.textContent = 'Copied';
+        setTimeout(() => { btn.textContent = orig; }, 1500);
+      });
+    });
+  });
 }
 
 function highlightCodeBlocks(container) {
@@ -803,12 +847,7 @@ async function checkHealth() {
       const data = await r.json();
       const ok = data.ollama === true && data.model_available !== false;
       setModelStatus(ok);
-      if (modelStatusEl) modelStatusEl.title = data.model_available === false ? 'Model not found – click to change' : 'Click to change model';
-      if (data.model) {
-        currentModelName = data.model;
-        if (modelNameEl) modelNameEl.textContent = data.model;
-        if (modelDropdownCurrent) modelDropdownCurrent.textContent = data.model + ' – Ollama';
-      }
+      if (data.model) setModelName(data.model, data.provider || 'Ollama');
       return true;
     }
   } catch (_) {}
@@ -821,6 +860,7 @@ form.addEventListener('submit', async (e) => {
   e.preventDefault();
   const text = input.value.trim();
   if (!text) return;
+  if (currentPage === 'home') setPage('chat');
   input.value = '';
   appendMessage('user', text);
   submit.disabled = true;
@@ -857,7 +897,7 @@ form.addEventListener('submit', async (e) => {
   if (steps) addStep(steps, 'Sending request…');
 
   currentChatAbortController = new AbortController();
-  if (btnCancel) btnCancel.hidden = false;
+  if (btnCancel) btnCancel.classList.remove('btn-cancel-hidden');
 
   try {
     const r = await fetch(baseUrl + '/chat', {
@@ -1006,7 +1046,7 @@ form.addEventListener('submit', async (e) => {
     }
   } finally {
     currentChatAbortController = null;
-    if (btnCancel) btnCancel.hidden = true;
+    if (btnCancel) btnCancel.classList.add('btn-cancel-hidden');
     setBackendStatus('');
     setActivityLiveStatus('');
   }
@@ -1016,6 +1056,7 @@ form.addEventListener('submit', async (e) => {
   if (finalContent) {
     bubble.innerHTML = renderMarkdown(finalContent);
     ensureHighlightJs().then(() => highlightCodeBlocks(bubble));
+    attachCodeBlockCopyHandlers(bubble);
   }
   submit.disabled = false;
   input.disabled = false;
@@ -1025,6 +1066,86 @@ form.addEventListener('submit', async (e) => {
 if (btnCancel) btnCancel.addEventListener('click', () => {
   if (currentChatAbortController) currentChatAbortController.abort();
 });
+
+const btnStt = document.getElementById('btn-stt');
+let mediaRecorder = null;
+let sttChunks = [];
+let sttListening = false;
+let sttTranscribing = false;
+let sttAbortController = null;
+
+async function toggleSpeechToText() {
+  if (sttTranscribing) {
+    if (sttAbortController) sttAbortController.abort();
+    sttTranscribing = false;
+    btnStt?.classList.remove('transcribing');
+    return;
+  }
+  if (sttListening) {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+    sttListening = false;
+    btnStt?.classList.remove('listening');
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
+    mediaRecorder = new MediaRecorder(stream);
+    sttChunks = [];
+    mediaRecorder.ondataavailable = (e) => { if (e.data.size) sttChunks.push(e.data); };
+    mediaRecorder.onstop = async () => {
+      stream.getTracks().forEach((t) => t.stop());
+      if (sttChunks.length === 0) {
+        sttTranscribing = false;
+        btnStt?.classList.remove('transcribing');
+        return;
+      }
+      btnStt?.classList.remove('listening');
+      btnStt?.classList.add('transcribing');
+      sttTranscribing = true;
+      try {
+        await ensureBackendUrl();
+        sttAbortController = new AbortController();
+        const blob = new Blob(sttChunks, { type: mime });
+        const fd = new FormData();
+        fd.append('audio', blob, 'recording.webm');
+        const lang = (navigator.language || 'en').slice(0, 2);
+        const r = await fetch(baseUrl + '/transcribe?language=' + encodeURIComponent(lang), {
+          method: 'POST',
+          body: fd,
+          signal: sttAbortController.signal,
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          throw new Error(err.detail || r.statusText);
+        }
+        const data = await r.json();
+        const text = (data.text || '').trim();
+        if (text && input) {
+          const before = input.value;
+          input.value = before + (before && !before.endsWith(' ') ? ' ' : '') + text;
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          resizeInput();
+          input.focus();
+          if (currentPage === 'home') setPage('chat');
+        }
+      } catch (err) {
+        if (err.name !== 'AbortError') addActivity('Transcription failed: ' + (err.message || err), 'error');
+      } finally {
+        sttAbortController = null;
+        sttTranscribing = false;
+        btnStt?.classList.remove('transcribing');
+      }
+    };
+    mediaRecorder.start();
+    sttListening = true;
+    btnStt?.classList.add('listening');
+  } catch (err) {
+    addActivity('Microphone access denied or unavailable', 'error');
+  }
+}
+
+if (btnStt) btnStt.addEventListener('click', toggleSpeechToText);
 
 let warmTimeout = null;
 if (activityToggle && activityWrap) activityToggle.addEventListener('click', () => {
@@ -1104,7 +1225,6 @@ function openFolderHandler() {
   });
 }
 
-if (projectPathBtn) projectPathBtn.addEventListener('click', openFolderHandler);
 if (projectPathPageBtn) projectPathPageBtn.addEventListener('click', openFolderHandler);
 
 window.electronAPI?.onNavNewChat?.(() => navNewChat?.click());
@@ -1134,7 +1254,7 @@ async function ensureHighlightJs() {
   try {
     const link = document.createElement('link');
     link.rel = 'stylesheet';
-    link.href = '../node_modules/@highlightjs/cdn-assets/styles/github.min.css';
+    link.href = '../node_modules/@highlightjs/cdn-assets/styles/github-dark.min.css';
     document.head.appendChild(link);
     const script = document.createElement('script');
     script.src = '../node_modules/@highlightjs/cdn-assets/highlight.js';
@@ -1311,8 +1431,118 @@ projectTreeEl?.addEventListener('contextmenu', (e) => {
   addActivity('Added to context: ' + item.dataset.path, 'status');
 });
 
-if (contextAddFileBtn) {
-  contextAddFileBtn.addEventListener('click', async () => {
+function showContextPanel() {
+  const panel = document.getElementById('context-provider-panel');
+  if (panel) {
+    updateContextTypeButtons();
+    panel.hidden = false;
+  }
+}
+
+function hideContextPanel() {
+  const panel = document.getElementById('context-provider-panel');
+  if (panel) panel.hidden = true;
+}
+
+document.getElementById('btn-context-at')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  hideProjectPanel();
+  const panel = document.getElementById('context-provider-panel');
+  if (panel?.hidden) showContextPanel();
+  else hideContextPanel();
+});
+
+function showProjectPanel() {
+  const panel = document.getElementById('project-context-panel');
+  if (!panel) return;
+  hideContextPanel();
+  const pathEl = document.getElementById('project-context-path');
+  if (pathEl) {
+    window.electronAPI?.getProjectPath?.().then((p) => {
+      pathEl.textContent = p || 'No project selected';
+    }).catch(() => {
+      pathEl.textContent = 'No project selected';
+    });
+  }
+  panel.hidden = false;
+}
+
+function hideProjectPanel() {
+  const panel = document.getElementById('project-context-panel');
+  if (panel) panel.hidden = true;
+}
+
+document.getElementById('context-project')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  const panel = document.getElementById('project-context-panel');
+  if (panel?.hidden) showProjectPanel();
+  else hideProjectPanel();
+});
+
+document.getElementById('project-context-open')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  if (!window.electronAPI?.openFolder) return;
+  window.electronAPI.openFolder().then((chosen) => {
+    if (chosen) {
+      window.electronAPI.setProjectPath(chosen);
+      setProjectPathDisplay(chosen);
+      const pathEl = document.getElementById('project-context-path');
+      if (pathEl) pathEl.textContent = chosen;
+    }
+  });
+});
+
+document.getElementById('project-context-panel')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('.project-context-btn[data-type]');
+  if (!btn) return;
+  e.preventDefault();
+  hideProjectPanel();
+  runContextProvider(btn.dataset.type);
+});
+
+
+input?.addEventListener('keydown', (e) => {
+  if (e.key === '@' || (e.key === '2' && e.shiftKey)) showContextPanel();
+});
+input?.addEventListener('input', () => {
+  const val = input.value || '';
+  if (val.endsWith('@')) showContextPanel();
+});
+
+document.getElementById('context-add-file')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  runContextProvider('code-add-file');
+});
+
+document.querySelectorAll('.chat-icon-btn[data-type]').forEach((btn) => {
+  btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    runContextProvider(btn.dataset.type);
+  });
+});
+
+document.getElementById('context-provider-tags')?.addEventListener('click', (e) => {
+  const tag = e.target.closest('.context-provider-tag');
+  if (!tag?.dataset.type) return;
+  e.preventDefault();
+  runContextProvider(tag.dataset.type);
+});
+
+document.addEventListener('click', (e) => {
+  const ctxPanel = document.getElementById('context-provider-panel');
+  const projPanel = document.getElementById('project-context-panel');
+  const btnAt = document.getElementById('btn-context-at');
+  const btnProject = document.getElementById('context-project');
+  const inPanel = ctxPanel?.contains(e.target) || projPanel?.contains(e.target);
+  const inTrigger = btnAt?.contains(e.target) || btnProject?.contains(e.target) || input?.contains(e.target);
+  if (!inPanel && !inTrigger) {
+    if (ctxPanel && !ctxPanel.hidden) hideContextPanel();
+    if (projPanel && !projPanel.hidden) hideProjectPanel();
+  }
+});
+
+async function runContextProvider(type) {
+  if (type === 'code-add-file') {
     if (!window.electronAPI?.openFile) return;
     const root = await (window.electronAPI.getProjectPath?.() || Promise.resolve(''));
     if (!root) {
@@ -1334,18 +1564,13 @@ if (contextAddFileBtn) {
     }
     addContextPath(relPath);
     setPage('chat');
-  });
-}
-
-document.getElementById('context-types')?.addEventListener('click', async (e) => {
-  const btn = e.target.closest('.context-type-btn');
-  if (!btn) return;
-  const t = btn.dataset.type;
-  if (t === 'files') {
+    return;
+  }
+  if (type === 'files') {
     setPage('project');
     return;
   }
-  if (t === 'code') {
+  if (type === 'code') {
     const result = await showContextPrompt({
       title: 'Add code segment',
       label1: 'File path (relative to workspace)',
@@ -1370,13 +1595,13 @@ document.getElementById('context-types')?.addEventListener('click', async (e) =>
     }
     return;
   }
-  if (t === 'codebase') {
+  if (type === 'codebase') {
     contextState.codebase = !contextState.codebase;
     renderContextList();
     updateContextTypeButtons();
     return;
   }
-  if (t === 'docs') {
+  if (type === 'docs') {
     const result = await showContextPrompt({
       title: 'Add documentation',
       label1: 'Documentation URL',
@@ -1391,7 +1616,7 @@ document.getElementById('context-types')?.addEventListener('click', async (e) =>
     }
     return;
   }
-  if (t === 'git') {
+  if (type === 'git') {
     const result = await showContextPrompt({
       title: 'Add Git context',
       label1: 'Mode: log or diff',
@@ -1409,7 +1634,7 @@ document.getElementById('context-types')?.addEventListener('click', async (e) =>
     updateContextPanels();
     return;
   }
-  if (t === 'web') {
+  if (type === 'web') {
     const result = await showContextPrompt({
       title: 'Web search',
       label1: 'Search query',
@@ -1423,13 +1648,13 @@ document.getElementById('context-types')?.addEventListener('click', async (e) =>
     updateContextPanels();
     return;
   }
-  if (t === 'past_chats') {
+  if (type === 'past_chats') {
     contextState.past_chats = !contextState.past_chats;
     renderContextList();
     updateContextTypeButtons();
     return;
   }
-  if (t === 'visual') {
+  if (type === 'visual') {
     if (!window.electronAPI?.openImage) return;
     const imageB64 = await window.electronAPI.openImage();
     if (imageB64) {
@@ -1440,14 +1665,14 @@ document.getElementById('context-types')?.addEventListener('click', async (e) =>
     updateContextTypeButtons();
     return;
   }
-  if (t === 'browser') {
+  if (type === 'browser') {
     contextState.browser = !contextState.browser;
     addActivity('@Browser: Placeholder - browser context not yet implemented', 'status');
     renderContextList();
     updateContextTypeButtons();
     return;
   }
-});
+}
 
 projectTreeEl?.addEventListener('click', (e) => {
   const item = e.target.closest('.project-tree-item');
@@ -1469,15 +1694,25 @@ projectTreeEl?.addEventListener('click', (e) => {
   }
 });
 
+let currentLogType = 'backend';
+
 async function loadLogs() {
   if (!logsContent) return;
   try {
-    const text = window.electronAPI?.readLogs ? await window.electronAPI.readLogs() : 'Logs unavailable';
-    logsContent.textContent = text || '(empty)';
+    if (currentLogType === 'backend') {
+      const text = window.electronAPI?.readLogs ? await window.electronAPI.readLogs('backend') : 'Logs unavailable';
+      logsContent.textContent = text || '(empty)';
+    } else {
+      logsContent.textContent = uiLogBuffer.length ? uiLogBuffer.join('\n') : '(empty)';
+    }
+    logsContent.scrollTop = logsContent.scrollHeight;
   } catch (e) {
     logsContent.textContent = 'Error: ' + (e.message || String(e));
   }
 }
+
+const homeInputContainer = document.getElementById('home-input-container');
+const inputRowWrap = document.querySelector('.input-row-wrap');
 
 function setPage(page) {
   currentPage = page;
@@ -1489,7 +1724,17 @@ function setPage(page) {
   });
   if (chatSub) chatSub.hidden = page !== 'chat';
   if (page !== 'chat') setHistoryPanelVisible(false);
-  if (bottomBar) bottomBar.hidden = page !== 'chat';
+  if (form && homeInputContainer && inputRowWrap) {
+    if (page === 'home') {
+      homeInputContainer.appendChild(form);
+      if (bottomBar) bottomBar.hidden = true;
+    } else {
+      inputRowWrap.appendChild(form);
+      if (bottomBar) bottomBar.hidden = page !== 'chat';
+    }
+  } else if (bottomBar) {
+    bottomBar.hidden = page !== 'chat';
+  }
   if (page === 'chat') updateChatWelcome();
   if (page === 'logs') loadLogs();
   if (page === 'settings') loadSettings();
@@ -1532,8 +1777,12 @@ async function loadSettings() {
 
 function setTheme(value) {
   document.documentElement.dataset.theme = value;
+  try { localStorage.setItem('app-theme', value); } catch (_) {}
   if (window.electronAPI?.setTheme) window.electronAPI.setTheme(value);
   applyTheme();
+  if (themeLight) themeLight.checked = value === 'light';
+  if (themeDark) themeDark.checked = value === 'dark';
+  if (themeSystem) themeSystem.checked = value === 'system';
 }
 
 async function saveLogPath(dir) {
@@ -1589,6 +1838,16 @@ if (navChatHistory) {
     fetchHistory();
   });
 }
+
+document.querySelectorAll('.logs-tab').forEach((tab) => {
+  tab.addEventListener('click', () => {
+    const type = tab.dataset.logType;
+    if (!type) return;
+    currentLogType = type;
+    document.querySelectorAll('.logs-tab').forEach((t) => t.classList.toggle('active', t.dataset.logType === type));
+    loadLogs();
+  });
+});
 
 if (btnRefreshLogs) btnRefreshLogs.addEventListener('click', loadLogs);
 
@@ -1695,46 +1954,60 @@ if (btnHistoryLoadMore) {
   btnHistoryLoadMore.addEventListener('click', () => fetchHistory(true));
 }
 
-if (modelStatusEl) modelStatusEl.addEventListener('click', (e) => {
-  e.stopPropagation();
-  const isHidden = modelDropdown.hidden;
-  modelDropdown.hidden = !isHidden;
-  if (!isHidden) return;
-  modelDropdownCurrent.textContent = currentModelName + ' – Ollama';
-});
-
-if (modelChangeBtn) modelChangeBtn.addEventListener('click', () => {
-  modelDropdown.hidden = true;
+document.getElementById('btn-model')?.addEventListener('click', (e) => {
+  e.preventDefault();
   openModelModal();
 });
 
-document.addEventListener('click', () => {
-  modelDropdown.hidden = true;
-});
-
-if (modelDropdown) modelDropdown.addEventListener('click', (e) => e.stopPropagation());
+async function loadModelsForProvider(provider) {
+  const q = provider === 'Built-in' ? '?provider=builtin' : '?provider=ollama';
+  const r = await fetch(baseUrl + '/models' + q);
+  const data = await r.json();
+  return data.models || [];
+}
 
 async function openModelModal() {
   modelModal.hidden = false;
   try {
-    const r = await fetch(baseUrl + '/models');
-    const data = await r.json();
-    const models = data.models || [];
+    const modelR = await fetch(baseUrl + '/model');
+    const modelData = modelR.ok ? await modelR.json() : {};
+    const provider = modelData.provider || 'Ollama';
+    currentProvider = provider;
+    if (modelProviderSelect) modelProviderSelect.value = provider;
+    const models = await loadModelsForProvider(provider);
     modelSelect.innerHTML = '';
     models.forEach((m) => {
       const opt = document.createElement('option');
       opt.value = m;
       opt.textContent = m;
-      if (m === currentModelName) opt.selected = true;
+      if (m === (modelData.model || currentModelName)) opt.selected = true;
       modelSelect.appendChild(opt);
     });
-    if (models.length && !currentModelName) {
-      currentModelName = models[0];
+    if (models.length && !modelSelect.value) {
       modelSelect.selectedIndex = 0;
     }
   } catch (_) {
     modelSelect.innerHTML = '<option value="">No models available</option>';
   }
+}
+
+if (modelProviderSelect) {
+  modelProviderSelect.addEventListener('change', async () => {
+    const provider = modelProviderSelect.value;
+    try {
+      const models = await loadModelsForProvider(provider);
+      modelSelect.innerHTML = '';
+      models.forEach((m) => {
+        const opt = document.createElement('option');
+        opt.value = m;
+        opt.textContent = m;
+        modelSelect.appendChild(opt);
+      });
+      if (models.length) modelSelect.selectedIndex = 0;
+    } catch (_) {
+      modelSelect.innerHTML = '<option value="">No models available</option>';
+    }
+  });
 }
 
 function closeModelModal() {
@@ -1745,7 +2018,16 @@ if (modelModalClose) modelModalClose.addEventListener('click', closeModelModal);
 
 if (modelModalSave) modelModalSave.addEventListener('click', async () => {
   const model = modelSelect.value;
+  const provider = modelProviderSelect ? modelProviderSelect.value : 'Ollama';
   if (!model) return;
+  const providerChanged = provider !== currentProvider;
+  if (providerChanged && window.electronAPI && window.electronAPI.setLLMConfig && window.electronAPI.restartBackend) {
+    await window.electronAPI.setLLMConfig({ provider, model });
+    window.electronAPI.restartBackend();
+    setModelName(model, provider);
+    closeModelModal();
+    return;
+  }
   try {
     const r = await fetch(baseUrl + '/model', {
       method: 'PATCH',
@@ -1754,7 +2036,10 @@ if (modelModalSave) modelModalSave.addEventListener('click', async () => {
     });
     if (r.ok) {
       const data = await r.json();
-      setModelName(data.model);
+      setModelName(data.model, data.provider);
+      if (window.electronAPI && window.electronAPI.setLLMConfig) {
+        await window.electronAPI.setLLMConfig({ model: data.model });
+      }
       closeModelModal();
     }
   } catch (_) {}
@@ -1787,6 +2072,12 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (!contextPromptModal?.hidden) closeContextPrompt(null);
     else if (!modelModal?.hidden) closeModelModal();
+    else {
+      const ctxPanel = document.getElementById('context-provider-panel');
+      const projPanel = document.getElementById('project-context-panel');
+      if (ctxPanel && !ctxPanel.hidden) hideContextPanel();
+      else if (projPanel && !projPanel.hidden) hideProjectPanel();
+    }
   }
   if (e.ctrlKey && e.key === 'n') {
     e.preventDefault();
@@ -1798,20 +2089,40 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-if (btnRetry) btnRetry.addEventListener('click', async () => {
-  btnRetry.disabled = true;
-  const ok = await checkHealth();
+async function performRetryConnection() {
+  let ok = await checkHealth();
   if (ok) {
     try {
       const r = await fetch(baseUrl + '/model');
       if (r.ok) {
         const data = await r.json();
-        setModelName(data.model);
+        setModelName(data.model, data.provider);
       }
     } catch (_) {}
+    return;
   }
-  btnRetry.disabled = false;
-});
+  window.electronAPI?.retryBackend?.();
+  const startTime = Date.now();
+  const interval = setInterval(async () => {
+    if (Date.now() - startTime >= BACKEND_CONNECT_TIMEOUT_MS) {
+      clearInterval(interval);
+      return;
+    }
+    ok = await checkHealth();
+    if (ok) {
+      clearInterval(interval);
+      try {
+        const r = await fetch(baseUrl + '/model');
+        if (r.ok) {
+          const data = await r.json();
+          setModelName(data.model, data.provider);
+        }
+      } catch (_) {}
+    }
+  }, BACKEND_POLL_INTERVAL_MS);
+}
+
+document.getElementById('nav-retry-connection')?.addEventListener('click', performRetryConnection);
 
 if (btnIndex) btnIndex.addEventListener('click', async () => {
   btnIndex.disabled = true;
@@ -1867,6 +2178,8 @@ async function init() {
   }
   setPage('home');
   setActiveConversation(null);
+  const sideNavModel = document.getElementById('side-nav-model');
+  if (sideNavModel) sideNavModel.textContent = `Model: ${currentModelName} – ${currentProvider}`;
   showConnectingBanner(true);
   let ok = await checkHealth();
   if (ok) {
@@ -1878,7 +2191,7 @@ async function init() {
       const r = await fetch(baseUrl + '/model');
       if (r.ok) {
         const data = await r.json();
-        setModelName(data.model);
+        setModelName(data.model, data.provider);
       }
     } catch (_) {}
     return;
@@ -1900,7 +2213,7 @@ async function init() {
       const res = await fetch(baseUrl + '/model');
       if (res.ok) {
         const data = await res.json();
-        setModelName(data.model);
+        setModelName(data.model, data.provider);
       }
     }
   }, BACKEND_POLL_INTERVAL_MS);
@@ -1929,7 +2242,7 @@ if (connectingRetry) {
         const res = await fetch(baseUrl + '/model');
         if (res.ok) {
           const data = await res.json();
-          setModelName(data.model);
+          setModelName(data.model, data.provider);
         }
       }
     }, BACKEND_POLL_INTERVAL_MS);
@@ -1938,9 +2251,28 @@ if (connectingRetry) {
 
 async function initTheme() {
   try {
-    const theme = window.electronAPI?.getTheme ? await window.electronAPI.getTheme() : 'system';
-    document.documentElement.dataset.theme = theme;
-    applyTheme();
+    let theme = 'system';
+    try {
+      const cached = localStorage.getItem('app-theme');
+      if (cached === 'light' || cached === 'dark' || cached === 'system') {
+        theme = cached;
+        document.documentElement.dataset.theme = theme;
+        applyTheme();
+        if (themeLight) themeLight.checked = theme === 'light';
+        if (themeDark) themeDark.checked = theme === 'dark';
+        if (themeSystem) themeSystem.checked = theme === 'system';
+      }
+    } catch (_) {}
+    const stored = window.electronAPI?.getTheme ? await window.electronAPI.getTheme() : 'system';
+    if (stored !== theme) {
+      theme = stored;
+      document.documentElement.dataset.theme = theme;
+      applyTheme();
+      if (themeLight) themeLight.checked = theme === 'light';
+      if (themeDark) themeDark.checked = theme === 'dark';
+      if (themeSystem) themeSystem.checked = theme === 'system';
+      try { localStorage.setItem('app-theme', theme); } catch (_) {}
+    }
   } catch (_) {}
 }
 

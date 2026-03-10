@@ -176,11 +176,15 @@ function startBackend(workspaceRoot) {
     log('ERROR', 'Backend directory missing:', backendDir);
     return;
   }
+  const settings = getAppSettings();
   const env = {
     ...process.env,
     PYTHONPATH: backendDir,
     WORKSPACE_ROOT: workspaceRoot || projectPath
   };
+  const provider = settings.llmProvider || 'Ollama';
+  env.LLM_PROVIDER = provider === 'Built-in' ? 'builtin' : 'ollama';
+  if (settings.llmModel) env.LLM_MODEL = settings.llmModel;
   if (app.isPackaged) {
     const bundled = getBundledPythonPath();
     if (bundled) {
@@ -397,6 +401,13 @@ function closeSplash() {
   }
 }
 
+function updateWindowTitle() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    const folderName = projectPath ? path.basename(projectPath) : '';
+    mainWindow.setTitle(folderName ? `AI Codec – ${folderName}` : 'AI Codec');
+  }
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1000,
@@ -412,6 +423,7 @@ function createWindow() {
   mainWindow.webContents.on('did-finish-load', () => {
     mainWindow.webContents.send('backend-url', `http://${BACKEND_HOST}:${BACKEND_PORT}`);
     mainWindow.webContents.send('project-path', projectPath);
+    updateWindowTitle();
   });
   mainWindow.webContents.on('did-fail-load', (event, code, desc) => {
     log('ERROR', 'Main window failed to load', code, desc);
@@ -578,10 +590,24 @@ ipcMain.handle('set-log-dir', (_, dirPath) => {
   return false;
 });
 
-ipcMain.handle('read-logs', () => {
+const LOG_READ_MAX_BYTES = 2 * 1024 * 1024;
+
+ipcMain.handle('read-logs', (_, logType) => {
   try {
-    const p = getLogPath();
+    const p = logType === 'backend'
+      ? path.join(projectPath || '.', 'logs', 'server.log')
+      : getLogPath();
     if (fs.existsSync(p)) {
+      const stat = fs.statSync(p);
+      if (stat.size > LOG_READ_MAX_BYTES) {
+        const buf = Buffer.alloc(LOG_READ_MAX_BYTES);
+        const fd = fs.openSync(p, 'r');
+        fs.readSync(fd, buf, 0, buf.length, stat.size - buf.length);
+        fs.closeSync(fd);
+        const s = buf.toString('utf8', 0, buf.length);
+        const nl = s.indexOf('\n');
+        return '... (showing last 2MB)\n\n' + (nl >= 0 ? s.slice(nl + 1) : s);
+      }
       return fs.readFileSync(p, 'utf8');
     }
     return '';
@@ -645,6 +671,37 @@ ipcMain.on('retry-backend', () => {
   startBackend(projectPath);
 });
 
+ipcMain.handle('get-llm-provider', () => {
+  const s = getAppSettings();
+  return s.llmProvider || 'Ollama';
+});
+
+ipcMain.handle('set-llm-provider', (_, provider) => {
+  if (provider === 'Ollama' || provider === 'Built-in') {
+    setAppSettings({ llmProvider: provider });
+    return true;
+  }
+  return false;
+});
+
+ipcMain.handle('set-llm-config', (_, cfg) => {
+  if (cfg && typeof cfg === 'object') {
+    const updates = {};
+    if (cfg.provider === 'Ollama' || cfg.provider === 'Built-in') updates.llmProvider = cfg.provider;
+    if (typeof cfg.model === 'string') updates.llmModel = cfg.model;
+    if (Object.keys(updates).length) {
+      setAppSettings(updates);
+      return true;
+    }
+  }
+  return false;
+});
+
+ipcMain.on('restart-backend', () => {
+  stopBackend();
+  startBackend(projectPath);
+});
+
 ipcMain.on('set-project-path', (_, newPath) => {
   if (!newPath || newPath === projectPath) return;
   projectPath = newPath;
@@ -652,6 +709,7 @@ ipcMain.on('set-project-path', (_, newPath) => {
   startBackend(projectPath);
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('project-path', projectPath);
+    updateWindowTitle();
   }
 });
 
