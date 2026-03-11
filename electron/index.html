@@ -16,7 +16,6 @@
           <div class="side-nav-sub" id="chat-sub" hidden>
             <button type="button" class="nav-sub-item" id="nav-new-chat">New chat</button>
             <button type="button" class="nav-sub-item" id="nav-chat-history">Chat history</button>
-            <div class="side-nav-project" id="side-nav-project"></div>
           </div>
         </div>
         <button type="button" class="side-nav-item" data-page="project">Project</button>
@@ -24,7 +23,10 @@
         <button type="button" class="side-nav-item" data-page="logs">Logs</button>
         <button type="button" class="side-nav-item" data-page="help">Help</button>
         <div class="side-nav-sep"></div>
-        <div class="side-nav-model" id="side-nav-model">Model: —</div>
+        <div class="side-nav-details">
+          <div class="side-nav-model" id="side-nav-model">Model: —</div>
+          <div class="side-nav-project-footer" id="side-nav-project-footer" title="">Project: —</div>
+        </div>
         <button type="button" class="side-nav-btn" id="nav-retry-connection" title="Retry backend connection" disabled>Retry connection</button>
       </nav>
     </aside>
@@ -331,27 +333,29 @@
     </div>
   </div>
   <div class="modal-overlay" id="model-modal" hidden>
-    <div class="modal" role="dialog" aria-labelledby="model-modal-title">
+    <div class="modal model-modal" role="dialog" aria-labelledby="model-modal-title">
       <div class="modal-header">
         <span class="modal-icon" aria-hidden="true"></span>
         <h2 class="modal-title" id="model-modal-title">Switch models</h2>
         <button type="button" class="modal-close" id="model-modal-close" aria-label="Close">&times;</button>
       </div>
-      <p class="modal-desc">Select a provider and model to use for your conversations.</p>
-      <div class="modal-body">
-        <div class="modal-field">
-          <label class="modal-label" for="model-provider">Provider</label>
-          <div class="modal-select-wrapper">
-            <select id="model-provider" class="modal-select">
-              <option value="Ollama">Ollama</option>
-              <option value="Built-in">Built-in</option>
-            </select>
+      <div class="model-modal-body">
+        <div class="model-providers-panel">
+          <div class="model-providers-panel-title">LLM Provider</div>
+          <div class="model-providers-list" id="model-providers-list">
+            <button type="button" class="model-provider-item" data-provider="Ollama">Ollama</button>
+            <button type="button" class="model-provider-item" data-provider="LM Studio">LM Studio</button>
+            <button type="button" class="model-provider-item" data-provider="Built-in">Built-in</button>
           </div>
         </div>
-        <div class="modal-field">
-          <label class="modal-label" for="model-select">Model</label>
-          <div class="modal-select-wrapper">
-            <select id="model-select" class="modal-select"></select>
+        <div class="model-models-panel">
+          <div class="model-models-panel-title" id="model-models-panel-title">Available Models</div>
+          <p class="model-models-prompt" id="model-models-prompt">Select a model to use for this workspace.</p>
+          <div class="modal-field">
+            <label class="modal-label" for="model-select">Model</label>
+            <div class="modal-select-wrapper">
+              <select id="model-select" class="modal-select"></select>
+            </div>
           </div>
         </div>
       </div>

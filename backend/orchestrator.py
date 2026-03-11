@@ -142,6 +142,37 @@ async def _run_subtask(
     return subtask
 
 
+async def _run_subtask_stream(
+    subtask: Subtask,
+    message: str,
+    project_context: str,
+    coder_model: str,
+    history: list,
+    get_agent_fn,
+) -> AsyncGenerator[str, None]:
+    from agent_harness import stream_events
+    focused = f"[Subtask {subtask.id}] {subtask.task}\n\nPart of larger request: {message[:200]}"
+    full_message = f"{project_context}\n\n--- Task ---\n\n{focused}" if project_context else focused
+    tokens = []
+    try:
+        agent = get_agent_fn("agent", coder_model)
+        async for chunk in stream_events(agent, full_message, history=history, max_steps=15):
+            if chunk.strip():
+                yield chunk
+                try:
+                    data = json.loads(chunk.strip())
+                    if data.get("type") == "token" and data.get("content"):
+                        tokens.append(data["content"])
+                    elif data.get("type") == "error":
+                        subtask.error = data.get("content", "Unknown error")
+                except (json.JSONDecodeError, ValueError):
+                    pass
+        subtask.result = "".join(tokens) if not subtask.error else ""
+    except Exception as e:
+        subtask.error = str(e)
+        log.debug("subtask %s failed: %s", subtask.id, e)
+
+
 async def run_orchestrated(
     message: str,
     project_context: str,
@@ -186,10 +217,11 @@ async def run_orchestrated(
             s = group[0]
             yield json.dumps({"type": "status", "content": f"Subtask {s.id}: {s.task[:60]}…"}) + "\n"
             ctx_str = "\n\n".join(f"Subtask {x.id} result: {x.result or x.error}" for x in accumulated_context) if accumulated_context else ""
-            await _run_subtask(s, message, project_context + "\n\n" + ctx_str if ctx_str else project_context, coder, history, get_agent_fn)
+            async for chunk in _run_subtask_stream(
+                s, message, project_context + "\n\n" + ctx_str if ctx_str else project_context, coder, history, get_agent_fn
+            ):
+                yield chunk
             accumulated_context.append(s)
-            if s.result:
-                yield json.dumps({"type": "token", "content": f"\n--- Subtask {s.id} ---\n{s.result}\n"}) + "\n"
             if s.error:
                 yield json.dumps({"type": "status", "content": f"Subtask {s.id} error: {s.error}"}) + "\n"
     summary = "\n\n".join(f"**Subtask {s.id}**: {s.result or s.error or '—'}" for s in accumulated_context)

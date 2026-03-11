@@ -109,6 +109,10 @@ Analysis of the vencoder coding agent against current best practices and recomme
 | P2 | Loop/duplicate call detection | Medium | Done (tools/duplicate_wrapper.py) |
 | P2 | search_context error handling | Small | Done |
 | P2 | Retry for search_context | Small | Deferred |
+| P2 | Orchestrator trigger: use request_intent instead of message length | Small | Done |
+| P2 | Skip plan-prep when orchestrator runs | Small | Done |
+| P2 | Stream orchestrator subtask output | Medium | Done |
+| P2 | Loosen duplicate detection (exclude read-only tools) | Small | Done |
 
 ## Implemented Changes
 
@@ -125,4 +129,8 @@ Analysis of the vencoder coding agent against current best practices and recomme
 - **Project context file**: .codec-agent/project.md or project.txt loaded as project instructions (context_builders.build_project_file_context)
 - **list_directory**: Browse workspace dirs (file_tools.py)
 - **git_status, git_diff**: Inspect changes on demand (git_tools.py)
+- **Orchestrator trigger**: Uses request_intent in ("complex", "plan") instead of message length
+- **Plan-prep**: Skipped when orchestrator runs (avoids redundant planning)
+- **Orchestrator streaming**: Sequential subtasks stream agent output in real time (_run_subtask_stream)
+- **Duplicate detection**: Read-only tools (read_file, grep_search, etc.) excluded from duplicate check
 - **run_tests**: Run pytest, npm test, etc. (shell_tools.py)

@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+LM_STUDIO_BASE_URL = os.getenv("LM_STUDIO_BASE_URL", "http://localhost:1234")
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama")
 LLM_MODEL = os.getenv("LLM_MODEL", "gpt-oss:20b")
 _data_home = os.getenv("APPDATA") or os.getenv("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")

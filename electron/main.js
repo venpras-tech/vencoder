@@ -183,7 +183,7 @@ function startBackend(workspaceRoot) {
     WORKSPACE_ROOT: workspaceRoot || projectPath
   };
   const provider = settings.llmProvider || 'Ollama';
-  env.LLM_PROVIDER = provider === 'Built-in' ? 'builtin' : 'ollama';
+  env.LLM_PROVIDER = provider === 'Built-in' ? 'builtin' : provider === 'LM Studio' ? 'lmstudio' : 'ollama';
   if (settings.llmModel) env.LLM_MODEL = settings.llmModel;
   if (app.isPackaged) {
     const bundled = getBundledPythonPath();
@@ -677,7 +677,7 @@ ipcMain.handle('get-llm-provider', () => {
 });
 
 ipcMain.handle('set-llm-provider', (_, provider) => {
-  if (provider === 'Ollama' || provider === 'Built-in') {
+  if (provider === 'Ollama' || provider === 'Built-in' || provider === 'LM Studio') {
     setAppSettings({ llmProvider: provider });
     return true;
   }
@@ -687,7 +687,7 @@ ipcMain.handle('set-llm-provider', (_, provider) => {
 ipcMain.handle('set-llm-config', (_, cfg) => {
   if (cfg && typeof cfg === 'object') {
     const updates = {};
-    if (cfg.provider === 'Ollama' || cfg.provider === 'Built-in') updates.llmProvider = cfg.provider;
+    if (cfg.provider === 'Ollama' || cfg.provider === 'Built-in' || cfg.provider === 'LM Studio') updates.llmProvider = cfg.provider;
     if (typeof cfg.model === 'string') updates.llmModel = cfg.model;
     if (Object.keys(updates).length) {
       setAppSettings(updates);

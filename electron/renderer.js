@@ -15,11 +15,13 @@ const backendStatusEl = document.getElementById('backend-status');
 const form = document.getElementById('form');
 const input = document.getElementById('input');
 const submit = document.getElementById('submit');
+const chatInputBox = document.querySelector('.chat-input-box');
 const modelModal = document.getElementById('model-modal');
 const modelModalClose = document.getElementById('model-modal-close');
 const modelModalSave = document.getElementById('model-modal-save');
 const modelSelect = document.getElementById('model-select');
-const modelProviderSelect = document.getElementById('model-provider');
+const modelProvidersList = document.getElementById('model-providers-list');
+const modelModelsPanelTitle = document.getElementById('model-models-panel-title');
 const btnIndex = document.getElementById('btn-index');
 const btnCancel = document.getElementById('btn-cancel');
 const projectPathPageBtn = document.getElementById('project-path-page');
@@ -28,7 +30,6 @@ const historyListEl = document.getElementById('history-list');
 const navNewChat = document.getElementById('nav-new-chat');
 const navChat = document.getElementById('nav-chat');
 const chatSub = document.getElementById('chat-sub');
-const sideNavProject = document.getElementById('side-nav-project');
 const navChatHistory = document.getElementById('nav-chat-history');
 const navRetryConnection = document.getElementById('nav-retry-connection');
 const historyPanel = document.getElementById('history-panel');
@@ -98,9 +99,10 @@ let historyRenderedLimit = HISTORY_VIRTUAL_THRESHOLD;
 function setProjectPathDisplay(pathStr) {
   const text = pathStr || 'No folder selected';
   if (projectPathTextPage) projectPathTextPage.textContent = text;
-  if (sideNavProject) {
-    sideNavProject.textContent = text;
-    sideNavProject.title = pathStr || '';
+  const sideNavProjectFooter = document.getElementById('side-nav-project-footer');
+  if (sideNavProjectFooter) {
+    sideNavProjectFooter.textContent = pathStr ? `Project: ${pathStr}` : 'Project: —';
+    sideNavProjectFooter.title = pathStr || '';
   }
 }
 
@@ -865,6 +867,7 @@ form.addEventListener('submit', async (e) => {
   appendMessage('user', text);
   submit.disabled = true;
   input.disabled = true;
+  chatInputBox?.classList.add('processing');
   clearActivity();
 
   let bubble, steps, blocks;
@@ -873,6 +876,7 @@ form.addEventListener('submit', async (e) => {
     if (!out) {
       submit.disabled = false;
       input.disabled = false;
+      chatInputBox?.classList.remove('processing');
       return;
     }
     bubble = out.bubble;
@@ -882,6 +886,7 @@ form.addEventListener('submit', async (e) => {
     console.error(err);
     submit.disabled = false;
     input.disabled = false;
+    chatInputBox?.classList.remove('processing');
     return;
   }
   bubble.textContent = '';
@@ -1060,6 +1065,7 @@ form.addEventListener('submit', async (e) => {
   }
   submit.disabled = false;
   input.disabled = false;
+  chatInputBox?.classList.remove('processing');
 });
 }
 
@@ -1724,6 +1730,7 @@ function setPage(page) {
   });
   if (chatSub) chatSub.hidden = page !== 'chat';
   if (page !== 'chat') setHistoryPanelVisible(false);
+  document.body.classList.toggle('chat-ui-hidden', ['settings', 'logs', 'help'].includes(page));
   if (form && homeInputContainer && inputRowWrap) {
     if (page === 'home') {
       homeInputContainer.appendChild(form);
@@ -1960,10 +1967,36 @@ document.getElementById('btn-model')?.addEventListener('click', (e) => {
 });
 
 async function loadModelsForProvider(provider) {
-  const q = provider === 'Built-in' ? '?provider=builtin' : '?provider=ollama';
-  const r = await fetch(baseUrl + '/models' + q);
+  const p = provider === 'Built-in' ? 'builtin' : provider === 'LM Studio' ? 'lmstudio' : 'ollama';
+  const r = await fetch(baseUrl + '/models?provider=' + encodeURIComponent(p));
   const data = await r.json();
   return data.models || [];
+}
+
+function setSelectedProvider(provider) {
+  const items = modelProvidersList?.querySelectorAll('.model-provider-item');
+  items?.forEach((el) => el.classList.toggle('active', el.dataset.provider === provider));
+  if (modelModelsPanelTitle) {
+    modelModelsPanelTitle.textContent = provider ? `Available Models for ${provider}` : 'Available Models';
+  }
+}
+
+async function loadModelsIntoSelect(provider) {
+  try {
+    const models = await loadModelsForProvider(provider);
+    modelSelect.innerHTML = '';
+    models.forEach((m) => {
+      const opt = document.createElement('option');
+      opt.value = m;
+      opt.textContent = m;
+      modelSelect.appendChild(opt);
+    });
+    if (models.length) modelSelect.selectedIndex = 0;
+    return models;
+  } catch (_) {
+    modelSelect.innerHTML = '<option value="">No models available</option>';
+    return [];
+  }
 }
 
 async function openModelModal() {
@@ -1973,42 +2006,28 @@ async function openModelModal() {
     const modelData = modelR.ok ? await modelR.json() : {};
     const provider = modelData.provider || 'Ollama';
     currentProvider = provider;
-    if (modelProviderSelect) modelProviderSelect.value = provider;
-    const models = await loadModelsForProvider(provider);
-    modelSelect.innerHTML = '';
-    models.forEach((m) => {
-      const opt = document.createElement('option');
-      opt.value = m;
-      opt.textContent = m;
-      if (m === (modelData.model || currentModelName)) opt.selected = true;
-      modelSelect.appendChild(opt);
-    });
-    if (models.length && !modelSelect.value) {
+    setSelectedProvider(provider);
+    const models = await loadModelsIntoSelect(provider);
+    const currentModel = modelData.model || currentModelName;
+    if (models.includes(currentModel)) {
+      modelSelect.value = currentModel;
+    } else if (models.length) {
       modelSelect.selectedIndex = 0;
     }
   } catch (_) {
+    setSelectedProvider('Ollama');
     modelSelect.innerHTML = '<option value="">No models available</option>';
   }
 }
 
-if (modelProviderSelect) {
-  modelProviderSelect.addEventListener('change', async () => {
-    const provider = modelProviderSelect.value;
-    try {
-      const models = await loadModelsForProvider(provider);
-      modelSelect.innerHTML = '';
-      models.forEach((m) => {
-        const opt = document.createElement('option');
-        opt.value = m;
-        opt.textContent = m;
-        modelSelect.appendChild(opt);
-      });
-      if (models.length) modelSelect.selectedIndex = 0;
-    } catch (_) {
-      modelSelect.innerHTML = '<option value="">No models available</option>';
-    }
-  });
-}
+modelProvidersList?.addEventListener('click', async (e) => {
+  const item = e.target.closest('.model-provider-item');
+  if (!item?.dataset.provider) return;
+  const provider = item.dataset.provider;
+  currentProvider = provider;
+  setSelectedProvider(provider);
+  await loadModelsIntoSelect(provider);
+});
 
 function closeModelModal() {
   modelModal.hidden = true;
@@ -2018,7 +2037,7 @@ if (modelModalClose) modelModalClose.addEventListener('click', closeModelModal);
 
 if (modelModalSave) modelModalSave.addEventListener('click', async () => {
   const model = modelSelect.value;
-  const provider = modelProviderSelect ? modelProviderSelect.value : 'Ollama';
+  const provider = modelProvidersList?.querySelector('.model-provider-item.active')?.dataset.provider || currentProvider || 'Ollama';
   if (!model) return;
   const providerChanged = provider !== currentProvider;
   if (providerChanged && window.electronAPI && window.electronAPI.setLLMConfig && window.electronAPI.restartBackend) {

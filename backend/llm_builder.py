@@ -4,6 +4,7 @@ from typing import Any, Optional
 from config import (
     BUILTIN_MODELS_DIR,
     LLM_PROVIDER,
+    LM_STUDIO_BASE_URL,
     NUM_CTX,
     NUM_PREDICT,
     OLLAMA_BASE_URL,
@@ -62,6 +63,20 @@ def build_llm(
             n_ctx=n_ctx,
             n_gpu_layers=-1,
             verbose=False,
+            **kwargs,
+        )
+    if provider == "lmstudio":
+        from langchain_openai import ChatOpenAI
+        base = (LM_STUDIO_BASE_URL or "http://localhost:1234").rstrip("/")
+        if not base.endswith("/v1"):
+            base = f"{base}/v1"
+        n_pred = num_predict if num_predict is not None else (NUM_PREDICT if NUM_PREDICT > 0 else 4096)
+        return ChatOpenAI(
+            model=model,
+            base_url=base,
+            api_key="lm-studio",
+            temperature=temperature if temperature is not None else TEMPERATURE,
+            max_tokens=n_pred,
             **kwargs,
         )
     from langchain_ollama import ChatOllama

@@ -21,6 +21,7 @@ from config import (
     KV_WARM_ENABLED,
     LLM_MODEL,
     LLM_PROVIDER,
+    LM_STUDIO_BASE_URL,
     MULTI_AGENT_ORCHESTRATOR_ENABLED,
     MULTI_MODEL_ENABLED,
     OLLAMA_BASE_URL,
@@ -64,13 +65,27 @@ def get_ollama_models():
         return []
 
 
+def get_lmstudio_models():
+    try:
+        req = urllib.request.Request(f"{LM_STUDIO_BASE_URL}/v1/models")
+        with urllib.request.urlopen(req, timeout=5) as r:
+            data = json.loads(r.read().decode())
+        return [m.get("id", "") for m in data.get("data", []) if m.get("id")]
+    except Exception as e:
+        log.debug("get_lmstudio_models failed: %s", e)
+        return []
+
+
 def get_provider() -> str:
     return (LLM_PROVIDER or "ollama").lower()
 
 
 def get_available_models() -> list[str]:
-    if get_provider() == "builtin":
+    p = get_provider()
+    if p == "builtin":
         return get_builtin_models()
+    if p == "lmstudio":
+        return get_lmstudio_models()
     return get_ollama_models()
 
 
@@ -324,7 +339,8 @@ async def stream_agent_events_with_history(
             if selected_model != current_model:
                 log.info("multi-model routing: %s -> %s (mode=%s)", current_model, selected_model, mode)
                 yield json.dumps({"type": "status", "content": f"Using {selected_model} for this task"}) + "\n"
-            if mode == "agent" and selected_model == MODEL_PLANNER and request_intent in ("complex", "plan"):
+            will_use_orchestrator = MULTI_AGENT_ORCHESTRATOR_ENABLED and mode == "agent" and request_intent in ("complex", "plan")
+            if mode == "agent" and selected_model == MODEL_PLANNER and request_intent in ("complex", "plan") and not will_use_orchestrator:
                 plan = await asyncio.to_thread(build_execution_plan, message, selected_model, models)
                 if plan:
                     plan_prefix = plan
@@ -349,7 +365,7 @@ async def stream_agent_events_with_history(
     use_orchestrator = (
         MULTI_AGENT_ORCHESTRATOR_ENABLED
         and mode == "agent"
-        and (selected_model == MODEL_PLANNER or len(message) > 80)
+        and request_intent in ("complex", "plan")
     )
     orchestrator_succeeded = False
     if use_orchestrator:
@@ -423,7 +439,7 @@ class WarmRequest(BaseModel):
 
 @app.post("/warm")
 def warm_cache(req: Optional[WarmRequest] = None):
-    if not KV_WARM_ENABLED:
+    if not KV_WARM_ENABLED or get_provider() == "lmstudio":
         return {"status": "disabled"}
     req = req or WarmRequest()
     text = (req.text or "")[:500]
@@ -459,6 +475,15 @@ def health():
     if provider == "builtin":
         model_available = model_exists(current_model)
         ollama_ok = True
+    elif provider == "lmstudio":
+        try:
+            req = urllib.request.Request(f"{LM_STUDIO_BASE_URL}/v1/models", method="GET")
+            with urllib.request.urlopen(req, timeout=2) as r:
+                if r.status == 200:
+                    ollama_ok = True
+                    model_available = model_exists(current_model)
+        except Exception as e:
+            log.debug("health lmstudio check failed: %s", e)
     else:
         try:
             req = urllib.request.Request(f"{OLLAMA_BASE_URL}/api/tags", method="GET")
@@ -567,14 +592,19 @@ def list_models(provider: Optional[str] = None):
         if p == "ollama":
             models = get_ollama_models()
             return {"provider": "Ollama", "models": models}
+        if p == "lmstudio":
+            models = get_lmstudio_models()
+            return {"provider": "LM Studio", "models": models}
     models = get_available_models()
-    prov = "Built-in" if get_provider() == "builtin" else "Ollama"
+    p = get_provider()
+    prov = "Built-in" if p == "builtin" else "LM Studio" if p == "lmstudio" else "Ollama"
     return {"provider": prov, "models": models}
 
 
 @app.get("/model")
 def get_model():
-    provider = "Built-in" if get_provider() == "builtin" else "Ollama"
+    p = get_provider()
+    provider = "Built-in" if p == "builtin" else "LM Studio" if p == "lmstudio" else "Ollama"
     return {"provider": provider, "model": current_model}
 
 
@@ -587,7 +617,8 @@ def set_model(req: ModelUpdate):
     current_model = req.model
     _agent_cache.clear()
     log.info("model set to %s", current_model)
-    provider = "Built-in" if get_provider() == "builtin" else "Ollama"
+    p = get_provider()
+    provider = "Built-in" if p == "builtin" else "LM Studio" if p == "lmstudio" else "Ollama"
     return {"provider": provider, "model": current_model}
 
 
