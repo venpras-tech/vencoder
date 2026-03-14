@@ -84,6 +84,7 @@
             </div>
           </div>
           <div class="messages" id="messages"></div>
+          <button type="button" class="btn-scroll-to-bottom" id="btn-scroll-to-bottom" title="Scroll to bottom" hidden>↓</button>
         </div>
       </div>
       <div class="page-content" id="page-settings" hidden>
@@ -124,6 +125,7 @@
             <h2 class="logs-title">Logs</h2>
             <div class="logs-tabs">
               <button type="button" class="logs-tab active" data-log-type="backend">Backend</button>
+              <button type="button" class="logs-tab" data-log-type="agent">Agent / LLM</button>
               <button type="button" class="logs-tab" data-log-type="ui">UI</button>
             </div>
             <button type="button" class="btn-refresh-logs" id="btn-refresh-logs">Refresh</button>
@@ -161,7 +163,7 @@
               <dt>@Git</dt>
               <dd>Include git log or diff. Choose log or diff mode and optionally a ref (e.g. <code>HEAD~5</code>).</dd>
               <dt>@Web</dt>
-              <dd>Web search results for your query. Requires <code>duckduckgo-search</code> on the backend.</dd>
+              <dd>Web search results for your query. Requires <code>ddgs</code> on the backend.</dd>
               <dt>@Past Chats</dt>
               <dd>Include recent messages from the current conversation as context.</dd>
               <dt>@Image</dt>
@@ -301,7 +303,7 @@
                 <button type="button" class="context-provider-tag" data-type="web" title="Web search results">@Web</button>
                 <button type="button" class="context-provider-tag" data-type="past_chats" title="Recent messages from this chat">@Past Chats</button>
                 <button type="button" class="context-provider-tag" data-type="visual" title="Image for visual analysis">@Image</button>
-                <button type="button" class="context-provider-tag" data-type="browser" title="Browser context (coming soon)">@Browser</button>
+                <button type="button" class="context-provider-tag" data-type="browser" title="Paste URLs in message; agent scrapes and analyzes">@Browser</button>
                 <button type="button" class="context-provider-tag" data-type="code-add-file" title="Pick a file to add">+ Add file</button>
               </div>
             </div>
@@ -346,11 +348,22 @@
             <button type="button" class="model-provider-item" data-provider="Ollama">Ollama</button>
             <button type="button" class="model-provider-item" data-provider="LM Studio">LM Studio</button>
             <button type="button" class="model-provider-item" data-provider="Built-in">Built-in</button>
+            <button type="button" class="model-provider-item" data-provider="OpenAI">OpenAI</button>
+            <button type="button" class="model-provider-item" data-provider="Anthropic">Anthropic</button>
+            <button type="button" class="model-provider-item" data-provider="Google">Google</button>
           </div>
         </div>
         <div class="model-models-panel">
           <div class="model-models-panel-title" id="model-models-panel-title">Available Models</div>
           <p class="model-models-prompt" id="model-models-prompt">Select a model to use for this workspace.</p>
+          <div class="modal-field model-field-base-url" id="model-field-base-url" hidden>
+            <label class="modal-label" for="model-base-url">Base URL</label>
+            <input type="text" id="model-base-url" class="modal-input" placeholder="Optional – custom endpoint">
+          </div>
+          <div class="modal-field model-field-api-key" id="model-field-api-key" hidden>
+            <label class="modal-label" for="model-api-key">API Key</label>
+            <input type="password" id="model-api-key" class="modal-input" placeholder="Required for cloud providers">
+          </div>
           <div class="modal-field">
             <label class="modal-label" for="model-select">Model</label>
             <div class="modal-select-wrapper">

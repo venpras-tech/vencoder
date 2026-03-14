@@ -70,17 +70,18 @@ def build_codebase_context(query: str, k: int = 6) -> str:
     if not query or not query.strip():
         return ""
     try:
-        from semantic_index import get_vector_store, query_index
+        from semantic_index import get_vector_store, query_index, ensure_indexed
         store = get_vector_store()
+        ensure_indexed(store)
         results = query_index(store, query.strip(), k=k)
         if not results:
-            return "[Codebase search: no relevant results found. Index may be empty.]"
+            return "[Codebase search: no relevant results found.]"
         out = []
         for r in results:
             out.append(f"--- {r['path']} ---\n{r['content']}")
         return "[Codebase search results]\n\n" + "\n\n".join(out)
     except Exception as e:
-        return f"[Codebase search failed: {e}. Try indexing the workspace first.]"
+        return f"[Codebase search failed: {e}]"
 
 
 def build_docs_context(urls: list[str]) -> str:
@@ -161,9 +162,9 @@ def build_web_context(query: str, max_results: int = 5) -> str:
         return ""
     try:
         try:
-            from duckduckgo_search import DDGS
-        except ImportError:
             from ddgs import DDGS
+        except ImportError:
+            from duckduckgo_search import DDGS
         results = list(DDGS().text(query.strip(), max_results=max_results))
         if not results:
             return "[Web search: no results]"
@@ -175,7 +176,7 @@ def build_web_context(query: str, max_results: int = 5) -> str:
             out.append(f"• {title}\n  {body}\n  {href}")
         return "[Web search results]\n\n" + "\n\n".join(out)
     except ImportError:
-        return "[Web search: install duckduckgo-search (pip install duckduckgo-search)]"
+        return "[Web search: install ddgs (pip install ddgs)]"
     except Exception as e:
         return f"[Web search failed: {e}]"
 

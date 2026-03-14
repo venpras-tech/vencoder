@@ -1,7 +1,34 @@
 import re
+import urllib.request
 from langchain_core.tools import tool
 from config import WORKSPACE_ROOT
 from .path_utils import resolve_workspace_path
+
+
+def _extract_text_from_html(html: str) -> str:
+    html = re.sub(r"<script[^>]*>[\s\S]*?</script>", "", html, flags=re.I)
+    html = re.sub(r"<style[^>]*>[\s\S]*?</style>", "", html, flags=re.I)
+    text = re.sub(r"<[^>]+>", " ", html)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+@tool
+def scrape_url(url: str, max_chars: int = 25000) -> str:
+    """Fetch a webpage and extract its text content. Use when the user shares a URL or asks to analyze a specific webpage (e.g. product pages, docs, articles). JavaScript-heavy sites may return partial content."""
+    url = (url or "").strip()
+    if not url.startswith(("http://", "https://")):
+        return "Error: URL must start with http:// or https://"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (compatible; AICodec/1.0)"})
+        with urllib.request.urlopen(req, timeout=15) as r:
+            html = r.read().decode("utf-8", errors="replace")
+        text = _extract_text_from_html(html)
+        if len(text) > max_chars:
+            text = text[:max_chars] + "\n[... truncated ...]"
+        return f"--- {url} ---\n\n{text}" if text else f"--- {url} ---\n[No text content extracted]"
+    except Exception as e:
+        return f"Error fetching {url}: {e}"
 
 
 @tool
@@ -11,9 +38,9 @@ def web_search(query: str, max_results: int = 5) -> str:
         return "Error: query is required"
     try:
         try:
-            from duckduckgo_search import DDGS
-        except ImportError:
             from ddgs import DDGS
+        except ImportError:
+            from duckduckgo_search import DDGS
         results = list(DDGS().text(query.strip(), max_results=max_results))
         if not results:
             return "No results found."
@@ -25,7 +52,7 @@ def web_search(query: str, max_results: int = 5) -> str:
             out.append(f"• {title}\n  {body}\n  {href}")
         return "\n\n".join(out)
     except ImportError:
-        return "Web search requires duckduckgo-search. Install with: pip install duckduckgo-search"
+        return "Web search requires ddgs. Install with: pip install ddgs"
     except Exception as e:
         return f"Web search failed: {e}"
 

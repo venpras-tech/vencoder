@@ -1196,6 +1196,57 @@ body.chat-ui-hidden .bottom-bar {
   border: 1px solid #e5e5e5;
 }
 
+.response-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 12px;
+  margin-top: 8px;
+  font-size: 0.75rem;
+  color: #737373;
+  background: #f5f5f5;
+  border-radius: 6px;
+  border: 1px solid #e5e5e5;
+}
+
+.response-meta-stats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.response-meta-pill {
+  padding: 2px 8px;
+  background: #fff;
+  border: 1px solid #e5e5e5;
+  border-radius: 4px;
+}
+
+.response-meta-stop {
+  color: #525252;
+}
+
+.response-meta-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.response-meta-btn {
+  padding: 4px 8px;
+  font-size: 0.9rem;
+  border: 1px solid #e5e5e5;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.response-meta-btn:hover {
+  background: #f0f0f0;
+}
+
 .reply-blocks {
   width: 100%;
   margin-bottom: 10px;
@@ -1327,6 +1378,44 @@ body.chat-ui-hidden .bottom-bar {
   color: #15803d;
 }
 
+.shell-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #525252;
+  background: #f0f0f0;
+  border-bottom: 1px solid #e5e5e5;
+}
+
+.shell-header .reply-block-title {
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+
+.shell-cancel-btn {
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  border: 1px solid #d4d4d4;
+  border-radius: 4px;
+  background: #fff;
+  color: #525252;
+  cursor: pointer;
+}
+
+.shell-cancel-btn:hover:not(:disabled) {
+  background: #f5f5f5;
+  border-color: #a3a3a3;
+}
+
+.shell-cancel-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .shell-section {
   padding: 8px 12px;
   border-bottom: 1px solid #e5e5e5;
@@ -1375,6 +1464,11 @@ body.chat-ui-hidden .bottom-bar {
   color: #991b1b;
 }
 
+.shell-output.shell-output-running {
+  color: #737373;
+  font-style: italic;
+}
+
 .shell-exit {
   padding: 6px 12px;
   font-size: 0.8rem;
@@ -1388,6 +1482,52 @@ body.chat-ui-hidden .bottom-bar {
   display: flex;
   flex-direction: column;
   gap: 20px;
+}
+
+.btn-scroll-to-bottom {
+  position: absolute;
+  bottom: 16px;
+  right: 24px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid #e5e5e5;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  font-size: 1.2rem;
+  color: #525252;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+.btn-scroll-to-bottom:hover {
+  background: #f5f5f5;
+  color: #1e293b;
+}
+
+.btn-scroll-to-bottom:not([hidden]) {
+  animation: scroll-btn-fade 0.2s ease;
+}
+
+@keyframes scroll-btn-fade {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+html.theme-dark .btn-scroll-to-bottom {
+  background: #404040;
+  border-color: #525252;
+  color: #e5e5e5;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+html.theme-dark .btn-scroll-to-bottom:hover {
+  background: #525252;
+  color: #fafafa;
 }
 
 .msg-wrap {
@@ -2586,12 +2726,50 @@ html.theme-dark .activity-body {
   color: #a3a3a3;
 }
 
+html.theme-dark .response-meta {
+  background: #262626;
+  border-color: #404040;
+  color: #a3a3a3;
+}
+
+html.theme-dark .response-meta-pill,
+html.theme-dark .response-meta-btn {
+  background: #404040;
+  border-color: #525252;
+  color: #e5e5e5;
+}
+
+html.theme-dark .response-meta-btn:hover {
+  background: #525252;
+}
+
+html.theme-dark .response-meta-stop {
+  color: #d4d4d4;
+}
+
 html.theme-dark .reply-steps,
 html.theme-dark .reply-block,
 html.theme-dark .reply-block-title {
   background: #262626;
   border-color: #404040;
   color: #fafafa;
+}
+
+html.theme-dark .shell-header {
+  background: #262626;
+  border-color: #404040;
+  color: #fafafa;
+}
+
+html.theme-dark .shell-cancel-btn {
+  background: #404040;
+  border-color: #525252;
+  color: #e5e5e5;
+}
+
+html.theme-dark .shell-cancel-btn:hover:not(:disabled) {
+  background: #525252;
+  border-color: #737373;
 }
 
 html.theme-dark .reply-step-preview,

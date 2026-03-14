@@ -184,6 +184,23 @@ def index_workspace_files(vector_store, max_file_size: int = 100_000, batch_size
     return total
 
 
+def is_index_empty(vector_store) -> bool:
+    try:
+        if hasattr(vector_store, "_collection"):
+            return vector_store._collection.count() == 0
+        if hasattr(vector_store, "docstore") and hasattr(vector_store.docstore, "_dict"):
+            return len(vector_store.docstore._dict) == 0
+        return True
+    except Exception:
+        return True
+
+
+def ensure_indexed(vector_store) -> int:
+    if not is_index_empty(vector_store):
+        return 0
+    return index_workspace_files(vector_store)
+
+
 def query_index(vector_store, query: str, k: int = 6) -> List[dict]:
     key = hashlib.sha256(f"{query}:{k}".encode()).hexdigest()
     now = time.monotonic()

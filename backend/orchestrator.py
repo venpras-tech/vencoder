@@ -156,7 +156,7 @@ async def _run_subtask_stream(
     tokens = []
     try:
         agent = get_agent_fn("agent", coder_model)
-        async for chunk in stream_events(agent, full_message, history=history, max_steps=15):
+        async for chunk in stream_events(agent, full_message, history=history, max_steps=15, model_name=coder_model):
             if chunk.strip():
                 yield chunk
                 try:

@@ -22,6 +22,7 @@ from config import (
     LLM_MODEL,
     LLM_PROVIDER,
     LM_STUDIO_BASE_URL,
+    MAX_PROMPT_CHARS,
     MULTI_AGENT_ORCHESTRATOR_ENABLED,
     MULTI_MODEL_ENABLED,
     OLLAMA_BASE_URL,
@@ -67,7 +68,9 @@ def get_ollama_models():
 
 def get_lmstudio_models():
     try:
-        req = urllib.request.Request(f"{LM_STUDIO_BASE_URL}/v1/models")
+        base = (LM_STUDIO_BASE_URL or "http://localhost:1234").rstrip("/")
+        url = f"{base}/v1/models" if not base.endswith("/v1") else f"{base}/models"
+        req = urllib.request.Request(url)
         with urllib.request.urlopen(req, timeout=5) as r:
             data = json.loads(r.read().decode())
         return [m.get("id", "") for m in data.get("data", []) if m.get("id")]
@@ -76,8 +79,19 @@ def get_lmstudio_models():
         return []
 
 
+OPENAI_MODELS = ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-4", "gpt-3.5-turbo", "o1", "o1-mini"]
+ANTHROPIC_MODELS = ["claude-sonnet-4-20250514", "claude-3-5-sonnet-20241022", "claude-3-opus-20240229", "claude-3-haiku-20240307"]
+GOOGLE_MODELS = ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-1.0-pro"]
+
+
 def get_provider() -> str:
     return (LLM_PROVIDER or "ollama").lower()
+
+
+def get_provider_display_name() -> str:
+    p = get_provider()
+    return {"ollama": "Ollama", "lmstudio": "LM Studio", "builtin": "Built-in",
+            "openai": "OpenAI", "anthropic": "Anthropic", "google": "Google"}.get(p, p.title())
 
 
 def get_available_models() -> list[str]:
@@ -86,6 +100,12 @@ def get_available_models() -> list[str]:
         return get_builtin_models()
     if p == "lmstudio":
         return get_lmstudio_models()
+    if p == "openai":
+        return OPENAI_MODELS
+    if p == "anthropic":
+        return ANTHROPIC_MODELS
+    if p == "google":
+        return GOOGLE_MODELS
     return get_ollama_models()
 
 
@@ -155,6 +175,9 @@ class DeleteHistoryRequest(BaseModel):
 
 
 def model_exists(name: str) -> bool:
+    p = get_provider()
+    if p in ("openai", "anthropic", "google"):
+        return True
     return name in get_available_models()
 
 
@@ -162,7 +185,10 @@ def ensure_model_exists(model: str) -> None:
     models = get_available_models()
     if model in models:
         return
-    if get_provider() == "builtin":
+    p = get_provider()
+    if p in ("openai", "anthropic", "google"):
+        return
+    if p == "builtin":
         hint = f"Model '{model}' not found. Add a GGUF file to the models folder."
         if models:
             hint += f" Available: {', '.join(models[:8])}{'...' if len(models) > 8 else ''}"
@@ -243,7 +269,7 @@ async def _build_message_with_context(
             if key in result_map:
                 sections.append(result_map[key])
     if context and context.browser:
-        sections.append("[Browser context requested: User may want to inspect browser state. Use available tools.]")
+        sections.append("[Browser context: User may share URLs to analyze. Use scrape_url to fetch webpage content and answer questions about it.]")
     if not sections:
         return message
     instruction = (
@@ -252,7 +278,26 @@ async def _build_message_with_context(
         "Prefer acting on the provided context directly—do not re-read files already in context unless you need to verify current state. "
         "Apply the user's prompt to the context: edit, analyze, fix, or answer based on what they asked."
     )
-    return f"[Context - use for the user's request]\n{instruction}\n\n" + "\n\n".join(sections) + "\n\n--- User message ---\n\n" + message
+    result = f"[Context - use for the user's request]\n{instruction}\n\n" + "\n\n".join(sections) + "\n\n--- User message ---\n\n" + message
+    if MAX_PROMPT_CHARS > 0 and len(result) > MAX_PROMPT_CHARS:
+        log.info("context truncated: %d -> %d chars (limit %d)", len(result), MAX_PROMPT_CHARS, MAX_PROMPT_CHARS)
+        user_part = "\n\n--- User message ---\n\n" + message
+        ctx_budget = MAX_PROMPT_CHARS - len(instruction) - len(user_part) - 80
+        if ctx_budget > 0:
+            truncated = []
+            for s in sections:
+                if ctx_budget <= 0:
+                    break
+                if len(s) <= ctx_budget:
+                    truncated.append(s)
+                    ctx_budget -= len(s)
+                else:
+                    truncated.append(s[:ctx_budget] + "\n[... context truncated - size limit exceeded ...]")
+                    ctx_budget = 0
+            result = f"[Context - use for the user's request]\n{instruction}\n\n" + "\n\n".join(truncated) + user_part
+        else:
+            result = f"[Context truncated - size limit exceeded. Use tools to read files as needed.]\n\n{instruction}\n\n" + user_part
+    return result
 
 
 async def stream_agent_events_with_history(
@@ -404,7 +449,7 @@ async def stream_agent_events_with_history(
     if not orchestrator_succeeded:
         try:
             from agent_harness import stream_events as harness_stream_events
-            async for chunk in harness_stream_events(get_agent(mode, model=selected_model), agent_message, history=history):
+            async for chunk in harness_stream_events(get_agent(mode, model=selected_model), agent_message, history=history, model_name=selected_model):
                 raw = chunk.strip()
                 if raw:
                     try:
@@ -439,7 +484,8 @@ class WarmRequest(BaseModel):
 
 @app.post("/warm")
 def warm_cache(req: Optional[WarmRequest] = None):
-    if not KV_WARM_ENABLED or get_provider() == "lmstudio":
+    p = get_provider()
+    if not KV_WARM_ENABLED or p in ("lmstudio", "openai", "anthropic", "google"):
         return {"status": "disabled"}
     req = req or WarmRequest()
     text = (req.text or "")[:500]
@@ -472,12 +518,17 @@ def health():
     provider = get_provider()
     ollama_ok = False
     model_available = False
-    if provider == "builtin":
+    if provider in ("openai", "anthropic", "google"):
+        ollama_ok = True
+        model_available = True
+    elif provider == "builtin":
         model_available = model_exists(current_model)
         ollama_ok = True
     elif provider == "lmstudio":
         try:
-            req = urllib.request.Request(f"{LM_STUDIO_BASE_URL}/v1/models", method="GET")
+            base = (LM_STUDIO_BASE_URL or "http://localhost:1234").rstrip("/")
+            url = f"{base}/v1/models" if not base.endswith("/v1") else f"{base}/models"
+            req = urllib.request.Request(url, method="GET")
             with urllib.request.urlopen(req, timeout=2) as r:
                 if r.status == 200:
                     ollama_ok = True
@@ -493,7 +544,38 @@ def health():
                     model_available = model_exists(current_model)
         except Exception as e:
             log.debug("health ollama check failed: %s", e)
-    return {"status": "ok", "ollama": ollama_ok, "model_available": model_available, "model": current_model, "provider": provider}
+    return {"status": "ok", "ollama": ollama_ok, "model_available": model_available, "model": current_model, "provider": get_provider_display_name()}
+
+
+@app.get("/logs")
+def get_logs():
+    try:
+        from config import WORKSPACE_ROOT
+        log_path = WORKSPACE_ROOT / "logs" / "server.log"
+        if log_path.exists():
+            size = log_path.stat().st_size
+            max_bytes = 2 * 1024 * 1024
+            if size > max_bytes:
+                with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                    f.seek(size - max_bytes)
+                    f.readline()
+                    return Response(content="... (showing last 2MB)\n\n" + f.read(), media_type="text/plain")
+            return Response(content=log_path.read_text(encoding="utf-8", errors="replace"), media_type="text/plain")
+        return Response(content="", media_type="text/plain")
+    except Exception as e:
+        log.exception("get_logs failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/cancel-shell")
+def cancel_shell():
+    try:
+        from tools.shell_tools import request_shell_cancel
+        request_shell_cancel()
+        return {"status": "ok"}
+    except Exception as e:
+        log.exception("cancel_shell failed")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/history")
@@ -582,44 +664,59 @@ async def chat_run(req: ChatRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _provider_param_to_internal(provider: str) -> str:
+    m = {"ollama": "ollama", "lm studio": "lmstudio", "lmstudio": "lmstudio",
+         "built-in": "builtin", "builtin": "builtin",
+         "openai": "openai", "anthropic": "anthropic", "google": "google"}
+    return m.get(provider.lower().strip(), provider.lower())
+
+
+def _provider_internal_to_display(p: str) -> str:
+    return {"ollama": "Ollama", "lmstudio": "LM Studio", "builtin": "Built-in",
+            "openai": "OpenAI", "anthropic": "Anthropic", "google": "Google"}.get(p, p.title())
+
+
+def _get_models_for_provider(p: str) -> list[str]:
+    if p == "builtin":
+        return get_builtin_models()
+    if p == "lmstudio":
+        return get_lmstudio_models()
+    if p == "openai":
+        return OPENAI_MODELS
+    if p == "anthropic":
+        return ANTHROPIC_MODELS
+    if p == "google":
+        return GOOGLE_MODELS
+    return get_ollama_models()
+
+
 @app.get("/models")
 def list_models(provider: Optional[str] = None):
     if provider:
-        p = provider.lower()
-        if p == "builtin":
-            models = get_builtin_models()
-            return {"provider": "Built-in", "models": models}
-        if p == "ollama":
-            models = get_ollama_models()
-            return {"provider": "Ollama", "models": models}
-        if p == "lmstudio":
-            models = get_lmstudio_models()
-            return {"provider": "LM Studio", "models": models}
+        p = _provider_param_to_internal(provider)
+        models = _get_models_for_provider(p)
+        return {"provider": _provider_internal_to_display(p), "models": models}
     models = get_available_models()
-    p = get_provider()
-    prov = "Built-in" if p == "builtin" else "LM Studio" if p == "lmstudio" else "Ollama"
-    return {"provider": prov, "models": models}
+    return {"provider": get_provider_display_name(), "models": models}
 
 
 @app.get("/model")
 def get_model():
-    p = get_provider()
-    provider = "Built-in" if p == "builtin" else "LM Studio" if p == "lmstudio" else "Ollama"
-    return {"provider": provider, "model": current_model}
+    return {"provider": get_provider_display_name(), "model": current_model}
 
 
 @app.patch("/model")
 def set_model(req: ModelUpdate):
     global _agent_cache, current_model
-    models = get_available_models()
-    if models and req.model not in models:
-        raise HTTPException(status_code=400, detail=f"Model not found: {req.model}. Available: {', '.join(models[:10])}{'...' if len(models) > 10 else ''}")
+    p = get_provider()
+    if p not in ("openai", "anthropic", "google"):
+        models = get_available_models()
+        if models and req.model not in models:
+            raise HTTPException(status_code=400, detail=f"Model not found: {req.model}. Available: {', '.join(models[:10])}{'...' if len(models) > 10 else ''}")
     current_model = req.model
     _agent_cache.clear()
     log.info("model set to %s", current_model)
-    p = get_provider()
-    provider = "Built-in" if p == "builtin" else "LM Studio" if p == "lmstudio" else "Ollama"
-    return {"provider": provider, "model": current_model}
+    return {"provider": get_provider_display_name(), "model": current_model}
 
 
 def _etag_for_tree(tree: list) -> str:

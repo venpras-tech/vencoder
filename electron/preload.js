@@ -28,6 +28,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   splashChoosePython: () => ipcRenderer.send('splash-choose-python'),
   retryBackend: () => ipcRenderer.send('retry-backend'),
   getLLMProvider: () => ipcRenderer.invoke('get-llm-provider'),
+  getLLMConfig: () => ipcRenderer.invoke('get-llm-config'),
   setLLMProvider: (p) => ipcRenderer.invoke('set-llm-provider', p),
   setLLMConfig: (cfg) => ipcRenderer.invoke('set-llm-config', cfg),
   restartBackend: () => ipcRenderer.send('restart-backend')

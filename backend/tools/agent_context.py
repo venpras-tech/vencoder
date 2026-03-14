@@ -7,7 +7,7 @@ _agent_run_calls: ContextVar[list] = ContextVar("agent_run_calls", default=[])
 
 READ_ONLY_TOOLS = frozenset({
     "read_file", "list_directory", "grep_search", "glob_search",
-    "web_search", "search_context", "git_status", "git_diff",
+    "web_search", "scrape_url", "search_context", "git_status", "git_diff",
 })
 
 

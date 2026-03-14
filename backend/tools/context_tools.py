@@ -1,6 +1,6 @@
 import time
 from langchain_core.tools import tool
-from semantic_index import get_vector_store, query_index
+from semantic_index import get_vector_store, query_index, ensure_indexed
 
 _SEARCH_RETRIES = 3
 _SEARCH_RETRY_DELAY = 0.5
@@ -16,6 +16,7 @@ def search_context(query: str, k: int = 6) -> str:
     for attempt in range(_SEARCH_RETRIES):
         try:
             store = get_vector_store()
+            ensure_indexed(store)
             results = query_index(store, query, k=k)
             break
         except Exception as e:
@@ -25,7 +26,7 @@ def search_context(query: str, k: int = 6) -> str:
     else:
         return f"Search failed: {last_err}. Index may be empty; try indexing the workspace first."
     if not results:
-        return "No relevant context found. Index may be empty; consider indexing the workspace."
+        return "No relevant context found."
     out = []
     for r in results:
         content = r["content"]

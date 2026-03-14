@@ -183,8 +183,25 @@ function startBackend(workspaceRoot) {
     WORKSPACE_ROOT: workspaceRoot || projectPath
   };
   const provider = settings.llmProvider || 'Ollama';
-  env.LLM_PROVIDER = provider === 'Built-in' ? 'builtin' : provider === 'LM Studio' ? 'lmstudio' : 'ollama';
+  const providerEnv = provider === 'Built-in' ? 'builtin' : provider === 'LM Studio' ? 'lmstudio' : provider === 'OpenAI' ? 'openai' : provider === 'Anthropic' ? 'anthropic' : provider === 'Google' ? 'google' : 'ollama';
+  env.LLM_PROVIDER = providerEnv;
   if (settings.llmModel) env.LLM_MODEL = settings.llmModel;
+  const baseUrl = settings.llmBaseUrl || '';
+  const apiKey = settings.llmApiKey || '';
+  if (providerEnv === 'ollama' && baseUrl) env.OLLAMA_BASE_URL = baseUrl;
+  if (providerEnv === 'lmstudio' && baseUrl) env.LM_STUDIO_BASE_URL = baseUrl;
+  if (providerEnv === 'openai') {
+    if (baseUrl) env.OPENAI_BASE_URL = baseUrl;
+    if (apiKey) env.OPENAI_API_KEY = apiKey;
+  }
+  if (providerEnv === 'anthropic') {
+    if (baseUrl) env.ANTHROPIC_BASE_URL = baseUrl;
+    if (apiKey) env.ANTHROPIC_API_KEY = apiKey;
+  }
+  if (providerEnv === 'google') {
+    if (baseUrl) env.GOOGLE_BASE_URL = baseUrl;
+    if (apiKey) env.GOOGLE_API_KEY = apiKey;
+  }
   if (app.isPackaged) {
     const bundled = getBundledPythonPath();
     if (bundled) {
@@ -677,7 +694,8 @@ ipcMain.handle('get-llm-provider', () => {
 });
 
 ipcMain.handle('set-llm-provider', (_, provider) => {
-  if (provider === 'Ollama' || provider === 'Built-in' || provider === 'LM Studio') {
+  const valid = ['Ollama', 'LM Studio', 'Built-in', 'OpenAI', 'Anthropic', 'Google'];
+  if (valid.includes(provider)) {
     setAppSettings({ llmProvider: provider });
     return true;
   }
@@ -687,14 +705,27 @@ ipcMain.handle('set-llm-provider', (_, provider) => {
 ipcMain.handle('set-llm-config', (_, cfg) => {
   if (cfg && typeof cfg === 'object') {
     const updates = {};
-    if (cfg.provider === 'Ollama' || cfg.provider === 'Built-in' || cfg.provider === 'LM Studio') updates.llmProvider = cfg.provider;
+    const valid = ['Ollama', 'LM Studio', 'Built-in', 'OpenAI', 'Anthropic', 'Google'];
+    if (cfg.provider && valid.includes(cfg.provider)) updates.llmProvider = cfg.provider;
     if (typeof cfg.model === 'string') updates.llmModel = cfg.model;
+    if (typeof cfg.baseUrl === 'string') updates.llmBaseUrl = cfg.baseUrl.trim();
+    if (typeof cfg.apiKey === 'string') updates.llmApiKey = cfg.apiKey;
     if (Object.keys(updates).length) {
       setAppSettings(updates);
       return true;
     }
   }
   return false;
+});
+
+ipcMain.handle('get-llm-config', () => {
+  const s = getAppSettings();
+  return {
+    provider: s.llmProvider || 'Ollama',
+    model: s.llmModel || '',
+    baseUrl: s.llmBaseUrl || '',
+    apiKey: s.llmApiKey ? '***' : ''
+  };
 });
 
 ipcMain.on('restart-backend', () => {

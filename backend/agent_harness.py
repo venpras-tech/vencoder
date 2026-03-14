@@ -1,13 +1,35 @@
 import asyncio
 import json
 import logging
+import time
+from datetime import datetime
 from typing import Any, AsyncGenerator, Dict, Optional
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
 from config import AGENT_MAX_STEPS, AGENT_TIMEOUT_SEC, MAX_HISTORY_MESSAGES, STEP_TIMEOUT_SEC
 
+MAX_HISTORY_MSG_CHARS = 4000
+
 log = logging.getLogger("agent_harness")
+
+
+def _response_meta_json(token_count: int, start_time: float, stop_reason: str) -> str:
+    duration_ms = int((time.monotonic() - start_time) * 1000)
+    tok_per_sec = token_count / (duration_ms / 1000) if duration_ms > 0 else 0
+    return json.dumps({
+        "type": "response_meta",
+        "tokens": token_count,
+        "duration_ms": duration_ms,
+        "tok_per_sec": round(tok_per_sec, 2),
+        "stop_reason": stop_reason,
+    })
+
+
+def _emit_log(level: str, message: str, model: str = "", extra: Optional[dict] = None) -> str:
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    prefix = f"[{model}] " if model else ""
+    return json.dumps({"type": "log", "level": level, "message": f"{ts} [{level}] {prefix}{message}", "extra": extra or {}})
 
 
 def _init_agent_run():
@@ -28,6 +50,8 @@ def _to_langchain_messages(history: list) -> list[BaseMessage]:
     out = []
     for m in history[-MAX_HISTORY_MESSAGES:]:
         role, content = m.get("role", ""), m.get("content", "")
+        if MAX_HISTORY_MSG_CHARS > 0 and len(content) > MAX_HISTORY_MSG_CHARS:
+            content = content[:MAX_HISTORY_MSG_CHARS] + "\n[... truncated ...]"
         if role == "user":
             out.append(HumanMessage(content=content))
         elif role == "assistant":
@@ -42,6 +66,7 @@ async def stream_events(
     timeout_sec: Optional[int] = None,
     max_steps: Optional[int] = None,
     history: Optional[list] = None,
+    model_name: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
     timeout = timeout_sec if timeout_sec is not None else (AGENT_TIMEOUT_SEC if AGENT_TIMEOUT_SEC > 0 else None)
     step_timeout = _step_timeout_for_run(timeout_sec)
@@ -55,10 +80,15 @@ async def stream_events(
     tool_count = 0
     stream_started = False
     step_num = 0
+    token_count = 0
+    model = model_name or ""
+    start_time = time.monotonic()
+    stop_reason = "complete"
 
     _init_agent_run()
     yield json.dumps({"type": "phase", "phase": "processing", "step": "Initializing…"}) + "\n"
     yield json.dumps({"type": "step", "phase": "think", "step": 0, "message": "Planning response…"}) + "\n"
+    yield _emit_log("INFO", "Agent run started", model) + "\n"
 
     try:
         astream = agent.astream_events(inputs, config=config, version="v2")
@@ -66,6 +96,7 @@ async def stream_events(
             try:
                 event = await asyncio.wait_for(astream.__anext__(), timeout=step_timeout)
             except asyncio.TimeoutError:
+                stop_reason = "timeout"
                 yield json.dumps({
                     "type": "error",
                     "content": f"Agent step timed out after {step_timeout}s",
@@ -77,6 +108,7 @@ async def stream_events(
             kind = event.get("event")
             if kind == "on_chat_model_start":
                 step_num += 1
+                token_count = 0
                 yield json.dumps({
                     "type": "step",
                     "phase": "think",
@@ -84,9 +116,11 @@ async def stream_events(
                     "message": "Thinking…",
                 }) + "\n"
                 yield json.dumps({"type": "phase", "phase": "think", "step": step_num}) + "\n"
+                yield _emit_log("INFO", "Prompt processing started", model, {"n_tokens": 0}) + "\n"
             elif kind == "on_tool_start":
                 tool_count += 1
                 if limit and tool_count > limit:
+                    stop_reason = "max_steps"
                     log.warning("max_steps exceeded: %s", limit)
                     yield json.dumps({
                         "type": "error",
@@ -104,6 +138,13 @@ async def stream_events(
                 }) + "\n"
                 yield json.dumps({"type": "tool_start", "tool": name}) + "\n"
                 yield json.dumps({"type": "status", "content": f"Executing: {name}"}) + "\n"
+                yield _emit_log("INFO", f"Tool: {name}", model) + "\n"
+                if name in ("shell_command", "run_tests"):
+                    inp = event.get("data", {}).get("input", {}) or {}
+                    cmd = inp.get("command", "") if isinstance(inp, dict) else ""
+                    if name == "run_tests" and not cmd:
+                        cmd = "pytest"
+                    yield json.dumps({"type": "shell_start", "command": cmd}) + "\n"
             elif kind == "on_chat_model_stream":
                 chunk = event.get("data", {}).get("chunk", {})
                 if hasattr(chunk, "content") and chunk.content:
@@ -111,6 +152,9 @@ async def stream_events(
                         stream_started = True
                         yield json.dumps({"type": "phase", "phase": "streaming"}) + "\n"
                     yield json.dumps({"type": "token", "content": chunk.content}) + "\n"
+                    token_count += 1
+                    if token_count % 64 == 0:
+                        yield _emit_log("DEBUG", f"Generating… {token_count} tokens", model, {"n_tokens": token_count}) + "\n"
             elif kind == "on_tool_end":
                 name = event.get("name", "?")
                 raw = event.get("data", {}).get("output", "")
@@ -152,17 +196,25 @@ async def stream_events(
                     "tool": name,
                     "preview": preview,
                 }) + "\n"
+                yield _emit_log("INFO", f"Tool done: {name}", model, {"preview": preview[:100]}) + "\n"
             elif kind == "on_chain_error":
+                stop_reason = "error"
                 err = event.get("data", {}).get("error", "Unknown error")
                 log.error("chain_error: %s", err)
                 yield json.dumps({"type": "error", "content": str(err)}) + "\n"
                 break
     except asyncio.CancelledError:
+        stop_reason = "User Stopped"
         yield json.dumps({"type": "error", "content": "Agent run cancelled"}) + "\n"
+        yield _response_meta_json(token_count, start_time, stop_reason) + "\n"
         raise
     except Exception as e:
+        stop_reason = "error"
         log.exception("harness stream_events failed")
         yield json.dumps({"type": "error", "content": str(e)}) + "\n"
+        yield _response_meta_json(token_count, start_time, stop_reason) + "\n"
+        return
+    yield _response_meta_json(token_count, start_time, stop_reason) + "\n"
 
 
 async def run(

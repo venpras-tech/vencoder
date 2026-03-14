@@ -1,4 +1,4 @@
-from langgraph.prebuilt import create_react_agent
+from langchain.agents import create_agent
 
 from config import NUM_CTX, NUM_PREDICT, REPEAT_PENALTY, TEMPERATURE
 from llm_builder import build_llm
@@ -18,6 +18,7 @@ from tools import (
     grep_search,
     glob_search,
     web_search,
+    scrape_url,
     search_context,
     git_status,
     git_diff,
@@ -36,6 +37,7 @@ AGENT_TOOLS = wrap_tools_with_duplicate_check([
     grep_search,
     glob_search,
     web_search,
+    scrape_url,
     search_context,
     git_status,
     git_diff,
@@ -47,6 +49,7 @@ ASK_TOOLS = wrap_tools_with_duplicate_check([
     grep_search,
     glob_search,
     web_search,
+    scrape_url,
     search_context,
     git_status,
     git_diff,
@@ -58,6 +61,7 @@ PLAN_TOOLS = wrap_tools_with_duplicate_check([
     grep_search,
     glob_search,
     web_search,
+    scrape_url,
     search_context,
     git_status,
     git_diff,
@@ -66,14 +70,13 @@ PLAN_TOOLS = wrap_tools_with_duplicate_check([
 
 
 def build_agent(model: str, mode: str = "agent"):
-    kwargs = {"reasoning": False}
-    llm = build_llm(model, **kwargs)
+    llm = build_llm(model)
     if mode == "ask":
-        agent = create_react_agent(llm, ASK_TOOLS, prompt=ASK_MODE_PROMPT)
+        agent = create_agent(llm, ASK_TOOLS, system_prompt=ASK_MODE_PROMPT)
     elif mode == "plan":
-        agent = create_react_agent(llm, PLAN_TOOLS, prompt=PLAN_MODE_PROMPT)
+        agent = create_agent(llm, PLAN_TOOLS, system_prompt=PLAN_MODE_PROMPT)
     else:
-        agent = create_react_agent(llm, AGENT_TOOLS, prompt=CODING_AGENT_SYSTEM_PROMPT)
+        agent = create_agent(llm, AGENT_TOOLS, system_prompt=CODING_AGENT_SYSTEM_PROMPT)
     return agent.with_retry(
         stop_after_attempt=3,
         wait_exponential_jitter=True,

@@ -58,6 +58,7 @@ const contextSelectorEl = document.getElementById('context-selector');
 const contextListEl = document.getElementById('context-list');
 const modeSelect = document.getElementById('mode-select');
 const activityToggle = document.getElementById('activity-toggle');
+const btnScrollToBottom = document.getElementById('btn-scroll-to-bottom');
 const contextPromptModal = document.getElementById('context-prompt-modal');
 const contextPromptClose = document.getElementById('context-prompt-close');
 const contextPromptCancel = document.getElementById('context-prompt-cancel');
@@ -71,6 +72,7 @@ const contextPromptInput2 = document.getElementById('context-prompt-input2');
 let baseUrl = '';
 let contextPromptResolve = null;
 let scrollThrottleId = null;
+let scrollBtnThrottleId = null;
 let contextPaths = [];
 let contextState = {
   codebase: false,
@@ -359,13 +361,24 @@ function setModelName(name, provider) {
 }
 
 const uiLogBuffer = [];
+const agentLogBuffer = [];
 const UI_LOG_MAX = 2000;
+const AGENT_LOG_MAX = 500;
 
 function appendUiLog(text, type = 'status') {
   const ts = new Date().toISOString();
   const label = type === 'tool' ? 'Tool' : type === 'error' ? 'Error' : type === 'index' ? 'Index' : 'Status';
   uiLogBuffer.push(`${ts} [${label}] ${text}`);
   if (uiLogBuffer.length > UI_LOG_MAX) uiLogBuffer.shift();
+}
+
+function appendAgentLog(msg) {
+  agentLogBuffer.push(msg);
+  if (agentLogBuffer.length > AGENT_LOG_MAX) agentLogBuffer.shift();
+  if (logsContent && currentLogType === 'agent') {
+    logsContent.textContent = agentLogBuffer.join('\n');
+    logsContent.scrollTop = logsContent.scrollHeight;
+  }
 }
 
 window.addEventListener('error', (e) => {
@@ -544,6 +557,7 @@ function clearMessages() {
   messageHistory = [];
   historyIndex = -1;
   updateChatWelcome();
+  updateScrollToBottomButton();
 }
 
 function updateChatWelcome() {
@@ -607,6 +621,7 @@ function appendMessage(role, content) {
   wrap.appendChild(div);
   messagesEl.appendChild(wrap);
   messagesEl.scrollTop = messagesEl.scrollHeight;
+  updateScrollToBottomButton();
   messageHistory.push({ role, content });
   historyIndex = messageHistory.length;
   updateChatWelcome();
@@ -619,11 +634,25 @@ function escapeHtml(s) {
   return div.innerHTML;
 }
 
+const SCROLL_NEAR_BOTTOM_THRESHOLD = 80;
+
+function updateScrollToBottomButton() {
+  if (!btnScrollToBottom || !messagesEl) return;
+  const { scrollTop, clientHeight, scrollHeight } = messagesEl;
+  const nearBottom = scrollHeight - scrollTop - clientHeight < SCROLL_NEAR_BOTTOM_THRESHOLD;
+  btnScrollToBottom.hidden = nearBottom || scrollHeight <= clientHeight;
+}
+
 function throttleScroll() {
   if (scrollThrottleId) return;
   scrollThrottleId = requestAnimationFrame(() => {
     scrollThrottleId = null;
-    if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
+    if (messagesEl) {
+      const last = messagesEl.lastElementChild;
+      if (last) last.scrollIntoView({ block: 'end', behavior: 'auto' });
+      else messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+    updateScrollToBottomButton();
   });
 }
 
@@ -782,6 +811,46 @@ function renderDiffHtml(path, oldText, newText) {
   return title + legend + body;
 }
 
+function renderResponseMeta(wrap, data) {
+  const tokens = data.tokens ?? 0;
+  const durSec = ((data.duration_ms ?? 0) / 1000).toFixed(2);
+  const tokPerSec = (data.tok_per_sec ?? 0).toFixed(2);
+  const stopReason = data.stop_reason || 'complete';
+  const meta = document.createElement('div');
+  meta.className = 'response-meta';
+  meta.innerHTML = '<div class="response-meta-stats">' +
+    '<span class="response-meta-pill">' + tokPerSec + ' tok/sec</span>' +
+    '<span class="response-meta-pill">' + tokens + ' tokens</span>' +
+    '<span class="response-meta-pill">' + durSec + 's</span>' +
+    '<span class="response-meta-stop">Stop reason: ' + escapeHtml(stopReason) + '</span>' +
+    '</div>' +
+    '<div class="response-meta-actions">' +
+    '<button type="button" class="response-meta-btn" title="Regenerate" data-action="retry">↻</button>' +
+    '<button type="button" class="response-meta-btn" title="Copy" data-action="copy">📋</button>' +
+    '<button type="button" class="response-meta-btn" title="Delete" data-action="delete">🗑</button>' +
+    '</div>';
+  const bubble = wrap.querySelector('.msg.assistant');
+  meta.querySelector('[data-action="copy"]').addEventListener('click', () => {
+    const text = bubble?.innerText || bubble?.textContent || '';
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text);
+    addActivity('Copied to clipboard', 'status');
+  });
+  meta.querySelector('[data-action="retry"]').addEventListener('click', () => {
+    const lastUser = messagesEl?.querySelector('.msg-wrap.user-wrap:last-of-type .msg.user');
+    const text = lastUser?.textContent?.trim();
+    if (text && input && form) {
+      wrap.remove();
+      input.value = text;
+      form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+    }
+  });
+  meta.querySelector('[data-action="delete"]').addEventListener('click', () => {
+    wrap.remove();
+    updateChatWelcome();
+  });
+  wrap.appendChild(meta);
+}
+
 function getOrCreateAssistantBubble() {
   if (!messagesEl) return null;
   const last = messagesEl.lastElementChild;
@@ -871,6 +940,10 @@ form.addEventListener('submit', async (e) => {
   clearActivity();
 
   let bubble, steps, blocks;
+  const streamStartTime = Date.now();
+  let streamTokenCount = 0;
+  let lastResponseMeta = null;
+  let wasCancelled = false;
   try {
     const out = getOrCreateAssistantBubble();
     if (!out) {
@@ -967,6 +1040,7 @@ form.addEventListener('submit', async (e) => {
                 setActivityLiveStatus(msg);
               } else if (phase === 'observe' && msg) addActivity(msg, 'tool');
             } else if (data.type === 'token' && data.content) {
+              streamTokenCount++;
               if (!streamingPhase) {
                 if (steps) addStep(steps, 'Writing reply…');
                 streamingPhase = true;
@@ -978,10 +1052,12 @@ form.addEventListener('submit', async (e) => {
               addActivity('Executing: ' + data.tool, 'status');
               setBackendStatus('Executing: ' + data.tool);
               setActivityLiveStatus('Executing: ' + data.tool);
+              throttleScroll();
             } else if (data.type === 'status' && data.content) {
               addActivity(data.content, 'status');
               if (steps && (data.content.includes('Orchestrator') || data.content.includes('Using ') || data.content.includes('Subtask'))) {
                 addStep(steps, '📋 ' + data.content, null, data.content.includes('done') || data.content.includes('planned'));
+                throttleScroll();
               }
               setBackendStatus(data.content);
               setActivityLiveStatus(data.content);
@@ -990,6 +1066,7 @@ form.addEventListener('submit', async (e) => {
               if (steps) addStep(steps, 'Done: ' + data.tool, preview || null, true);
               addActivity('Done: ' + data.tool + (preview ? ' — ' + preview : ''), 'tool');
               setBackendStatus('Done: ' + data.tool);
+              throttleScroll();
             } else if (data.type === 'file_edit' && blocks) {
               const block = document.createElement('div');
               block.className = 'reply-block reply-block-diff';
@@ -1000,25 +1077,60 @@ form.addEventListener('submit', async (e) => {
               block.innerHTML = renderDiffHtml(path, oldText, newText);
               blocks.appendChild(block);
               throttleScroll();
-            } else if (data.type === 'shell_run' && blocks) {
+            } else if (data.type === 'shell_start' && blocks) {
               const block = document.createElement('div');
-              block.className = 'reply-block reply-block-shell';
+              block.className = 'reply-block reply-block-shell reply-block-shell-running';
+              block.dataset.shellRunning = '1';
+              const cmd = String(data.command || '');
+              let outHtml = '<div class="shell-header"><span class="reply-block-title">Shell</span><button type="button" class="shell-cancel-btn" title="Cancel">Cancel</button></div>';
+              outHtml += '<div class="shell-section"><div class="shell-label">Command</div><pre class="shell-command">' + escapeHtml(cmd) + '</pre></div>';
+              outHtml += '<div class="shell-section"><div class="shell-label">Output</div><pre class="shell-output shell-output-running">Running…</pre></div>';
+              block.innerHTML = outHtml;
+              const cancelBtn = block.querySelector('.shell-cancel-btn');
+              if (cancelBtn) {
+                cancelBtn.addEventListener('click', () => {
+                  fetch(baseUrl + '/cancel-shell', { method: 'POST' }).catch(() => {});
+                  cancelBtn.disabled = true;
+                  cancelBtn.textContent = 'Cancelling…';
+                });
+              }
+              blocks.appendChild(block);
+              throttleScroll();
+            } else if (data.type === 'shell_run' && blocks) {
               const cmd = String(data.command || '');
               const stdout = String(data.stdout ?? '');
               const stderr = String(data.stderr ?? '');
               const exitCode = data.exit_code != null ? Number(data.exit_code) : null;
+              const runningBlock = blocks.querySelector('.reply-block-shell-running');
               let outHtml = '<div class="reply-block-title">Shell</div>';
               outHtml += '<div class="shell-section"><div class="shell-label">Command</div><pre class="shell-command">' + escapeHtml(cmd) + '</pre></div>';
               if (stdout) outHtml += '<div class="shell-section"><div class="shell-label">stdout</div><pre class="shell-output">' + escapeHtml(stdout) + '</pre></div>';
               if (stderr) outHtml += '<div class="shell-section"><div class="shell-label">stderr</div><pre class="shell-output shell-stderr">' + escapeHtml(stderr) + '</pre></div>';
               if (exitCode != null) outHtml += '<div class="shell-exit">Exit code: ' + escapeHtml(String(exitCode)) + '</div>';
-              block.innerHTML = outHtml;
-              blocks.appendChild(block);
+              if (runningBlock) {
+                runningBlock.classList.remove('reply-block-shell-running');
+                delete runningBlock.dataset.shellRunning;
+                runningBlock.innerHTML = outHtml;
+              } else {
+                const block = document.createElement('div');
+                block.className = 'reply-block reply-block-shell';
+                block.innerHTML = outHtml;
+                blocks.appendChild(block);
+              }
               throttleScroll();
+            } else if (data.type === 'log') {
+              appendAgentLog(data.message || '');
             } else if (data.type === 'error') {
               if (steps) addStep(steps, 'Error: ' + data.content, null, true);
               addActivity(data.content, 'error');
               bubble.textContent += '\n[Error: ' + data.content + ']';
+              throttleScroll();
+            } else if (data.type === 'response_meta') {
+              lastResponseMeta = data;
+              if (wrap && !wrap.querySelector('.response-meta')) {
+                renderResponseMeta(wrap, data);
+              }
+              throttleScroll();
             } else if (data.type === 'conversation' && data.id != null) {
               currentConversationId = data.id;
               conversationsList.unshift({
@@ -1040,7 +1152,8 @@ form.addEventListener('submit', async (e) => {
     }
     if (steps && steps.children.length) steps.hidden = false;
   } catch (err) {
-    if (err.name === 'AbortError') {
+    wasCancelled = err.name === 'AbortError';
+    if (wasCancelled) {
       if (steps) addStep(steps, 'Cancelled', null, true);
       addActivity('Request cancelled', 'status');
       bubble.textContent += (bubble.textContent ? '\n\n' : '') + '[Cancelled]';
@@ -1063,6 +1176,18 @@ form.addEventListener('submit', async (e) => {
     ensureHighlightJs().then(() => highlightCodeBlocks(bubble));
     attachCodeBlockCopyHandlers(bubble);
   }
+  const wrap = bubble?.closest('.assistant-wrap');
+  if (wrap && !wrap.querySelector('.response-meta')) {
+    const dur = Date.now() - streamStartTime;
+    const meta = lastResponseMeta || {
+      tokens: streamTokenCount,
+      duration_ms: dur,
+      tok_per_sec: dur > 0 ? streamTokenCount / (dur / 1000) : 0,
+      stop_reason: wasCancelled ? 'User Stopped' : 'complete'
+    };
+    renderResponseMeta(wrap, meta);
+  }
+  throttleScroll();
   submit.disabled = false;
   input.disabled = false;
   chatInputBox?.classList.remove('processing');
@@ -1158,6 +1283,27 @@ if (activityToggle && activityWrap) activityToggle.addEventListener('click', () 
   activityWrap.classList.toggle('collapsed');
   activityToggle.setAttribute('aria-expanded', activityWrap.classList.contains('collapsed') ? 'false' : 'true');
 });
+
+if (messagesEl) {
+  messagesEl.addEventListener('scroll', () => {
+    if (scrollBtnThrottleId) return;
+    scrollBtnThrottleId = requestAnimationFrame(() => {
+      scrollBtnThrottleId = null;
+      updateScrollToBottomButton();
+    });
+  });
+}
+
+if (btnScrollToBottom) {
+  btnScrollToBottom.addEventListener('click', () => {
+    if (messagesEl) {
+      const last = messagesEl.lastElementChild;
+      if (last) last.scrollIntoView({ block: 'end', behavior: 'smooth' });
+      else messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+    updateScrollToBottomButton();
+  });
+}
 
 if (input) {
   input.addEventListener('input', () => resizeInput());
@@ -1673,7 +1819,7 @@ async function runContextProvider(type) {
   }
   if (type === 'browser') {
     contextState.browser = !contextState.browser;
-    addActivity('@Browser: Placeholder - browser context not yet implemented', 'status');
+    addActivity('@Browser: Paste URLs in your message; agent will use scrape_url to fetch and analyze pages.', 'status');
     renderContextList();
     updateContextTypeButtons();
     return;
@@ -1701,13 +1847,24 @@ projectTreeEl?.addEventListener('click', (e) => {
 });
 
 let currentLogType = 'backend';
+let logsRefreshInterval = null;
 
 async function loadLogs() {
   if (!logsContent) return;
   try {
     if (currentLogType === 'backend') {
-      const text = window.electronAPI?.readLogs ? await window.electronAPI.readLogs('backend') : 'Logs unavailable';
+      let text = '';
+      if (window.electronAPI?.readLogs) {
+        text = await window.electronAPI.readLogs('backend');
+      } else if (baseUrl) {
+        const r = await fetch(baseUrl + '/logs');
+        text = r.ok ? await r.text() : 'Logs unavailable';
+      } else {
+        text = 'Logs unavailable';
+      }
       logsContent.textContent = text || '(empty)';
+    } else if (currentLogType === 'agent') {
+      logsContent.textContent = agentLogBuffer.length ? agentLogBuffer.join('\n') : '(empty)';
     } else {
       logsContent.textContent = uiLogBuffer.length ? uiLogBuffer.join('\n') : '(empty)';
     }
@@ -1742,8 +1899,20 @@ function setPage(page) {
   } else if (bottomBar) {
     bottomBar.hidden = page !== 'chat';
   }
-  if (page === 'chat') updateChatWelcome();
-  if (page === 'logs') loadLogs();
+  if (page === 'chat') {
+    updateChatWelcome();
+    updateScrollToBottomButton();
+  }
+  if (page === 'logs') {
+    loadLogs();
+    if (logsRefreshInterval) clearInterval(logsRefreshInterval);
+    logsRefreshInterval = setInterval(() => {
+      if (currentPage === 'logs' && currentLogType === 'backend') loadLogs();
+    }, 2000);
+  } else if (logsRefreshInterval) {
+    clearInterval(logsRefreshInterval);
+    logsRefreshInterval = null;
+  }
   if (page === 'settings') loadSettings();
   if (page === 'project') {
     ensureHighlightJs();
@@ -1966,8 +2135,25 @@ document.getElementById('btn-model')?.addEventListener('click', (e) => {
   openModelModal();
 });
 
+const PROVIDER_TO_API = {
+  'Ollama': 'ollama',
+  'LM Studio': 'lmstudio',
+  'Built-in': 'builtin',
+  'OpenAI': 'openai',
+  'Anthropic': 'anthropic',
+  'Google': 'google'
+};
+
+const PROVIDER_DEFAULT_BASE_URLS = {
+  'Ollama': 'http://localhost:11434',
+  'LM Studio': 'http://localhost:1234',
+  'OpenAI': 'https://api.openai.com/v1',
+  'Anthropic': 'https://api.anthropic.com',
+  'Google': 'https://generativelanguage.googleapis.com'
+};
+
 async function loadModelsForProvider(provider) {
-  const p = provider === 'Built-in' ? 'builtin' : provider === 'LM Studio' ? 'lmstudio' : 'ollama';
+  const p = PROVIDER_TO_API[provider] || 'ollama';
   const r = await fetch(baseUrl + '/models?provider=' + encodeURIComponent(p));
   const data = await r.json();
   return data.models || [];
@@ -1999,20 +2185,61 @@ async function loadModelsIntoSelect(provider) {
   }
 }
 
+function updateModelModalFieldsForProvider(provider) {
+  const baseUrlField = document.getElementById('model-field-base-url');
+  const apiKeyField = document.getElementById('model-field-api-key');
+  const baseUrlInput = document.getElementById('model-base-url');
+  const apiKeyInput = document.getElementById('model-api-key');
+  if (!baseUrlField || !apiKeyField) return;
+  const showBaseUrl = provider !== 'Built-in';
+  const showApiKey = ['OpenAI', 'Anthropic', 'Google'].includes(provider);
+  baseUrlField.hidden = !showBaseUrl;
+  apiKeyField.hidden = !showApiKey;
+  if (showBaseUrl && baseUrlInput) {
+    baseUrlInput.placeholder = PROVIDER_DEFAULT_BASE_URLS[provider] ? `Default: ${PROVIDER_DEFAULT_BASE_URLS[provider]}` : 'Optional – custom endpoint';
+  }
+  if (showApiKey && apiKeyInput) {
+    apiKeyInput.placeholder = 'Required – set in Settings or here';
+  }
+}
+
 async function openModelModal() {
   modelModal.hidden = false;
   try {
-    const modelR = await fetch(baseUrl + '/model');
-    const modelData = modelR.ok ? await modelR.json() : {};
-    const provider = modelData.provider || 'Ollama';
+    let provider = 'Ollama';
+    let baseUrlVal = '';
+    let apiKeyVal = '';
+    let hasApiKey = false;
+    if (window.electronAPI?.getLLMConfig) {
+      const cfg = await window.electronAPI.getLLMConfig();
+      provider = cfg.provider || 'Ollama';
+      baseUrlVal = cfg.baseUrl || '';
+      hasApiKey = cfg.apiKey === '***';
+    } else {
+      const modelR = await fetch(baseUrl + '/model');
+      const modelData = modelR.ok ? await modelR.json() : {};
+      provider = modelData.provider || 'Ollama';
+    }
     currentProvider = provider;
     setSelectedProvider(provider);
+    updateModelModalFieldsForProvider(provider);
+    const baseUrlInput = document.getElementById('model-base-url');
+    const apiKeyInput = document.getElementById('model-api-key');
+    if (baseUrlInput) baseUrlInput.value = baseUrlVal || '';
+    if (apiKeyInput) {
+      apiKeyInput.value = '';
+      apiKeyInput.placeholder = hasApiKey ? '•••••••• (key set) – enter to change' : 'Required – set in Settings or here';
+    }
     const models = await loadModelsIntoSelect(provider);
+    const modelR = await fetch(baseUrl + '/model');
+    const modelData = modelR.ok ? await modelR.json() : {};
     const currentModel = modelData.model || currentModelName;
     if (models.includes(currentModel)) {
       modelSelect.value = currentModel;
     } else if (models.length) {
-      modelSelect.selectedIndex = 0;
+      modelSelect.value = models[0];
+    } else {
+      modelSelect.value = currentModel;
     }
   } catch (_) {
     setSelectedProvider('Ollama');
@@ -2026,6 +2253,7 @@ modelProvidersList?.addEventListener('click', async (e) => {
   const provider = item.dataset.provider;
   currentProvider = provider;
   setSelectedProvider(provider);
+  updateModelModalFieldsForProvider(provider);
   await loadModelsIntoSelect(provider);
 });
 
@@ -2039,9 +2267,17 @@ if (modelModalSave) modelModalSave.addEventListener('click', async () => {
   const model = modelSelect.value;
   const provider = modelProvidersList?.querySelector('.model-provider-item.active')?.dataset.provider || currentProvider || 'Ollama';
   if (!model) return;
-  const providerChanged = provider !== currentProvider;
-  if (providerChanged && window.electronAPI && window.electronAPI.setLLMConfig && window.electronAPI.restartBackend) {
-    await window.electronAPI.setLLMConfig({ provider, model });
+  const baseUrlInput = document.getElementById('model-base-url');
+  const apiKeyInput = document.getElementById('model-api-key');
+  const baseUrlVal = baseUrlInput?.value?.trim() || '';
+  const apiKeyVal = apiKeyInput?.value || '';
+  const cfg = { provider, model };
+  if (baseUrlVal) cfg.baseUrl = baseUrlVal;
+  if (apiKeyVal) cfg.apiKey = apiKeyVal;
+  if (window.electronAPI?.setLLMConfig) {
+    await window.electronAPI.setLLMConfig(cfg);
+  }
+  if (window.electronAPI?.restartBackend) {
     window.electronAPI.restartBackend();
     setModelName(model, provider);
     closeModelModal();
@@ -2056,9 +2292,6 @@ if (modelModalSave) modelModalSave.addEventListener('click', async () => {
     if (r.ok) {
       const data = await r.json();
       setModelName(data.model, data.provider);
-      if (window.electronAPI && window.electronAPI.setLLMConfig) {
-        await window.electronAPI.setLLMConfig({ model: data.model });
-      }
       closeModelModal();
     }
   } catch (_) {}

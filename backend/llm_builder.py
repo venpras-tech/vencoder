@@ -2,13 +2,19 @@ from pathlib import Path
 from typing import Any, Optional
 
 from config import (
+    ANTHROPIC_API_KEY,
+    ANTHROPIC_BASE_URL,
     BUILTIN_MODELS_DIR,
+    GOOGLE_API_KEY,
+    GOOGLE_BASE_URL,
     LLM_PROVIDER,
     LM_STUDIO_BASE_URL,
     NUM_CTX,
     NUM_PREDICT,
     OLLAMA_BASE_URL,
     OLLAMA_KEEP_ALIVE,
+    OPENAI_API_KEY,
+    OPENAI_BASE_URL,
     REPEAT_PENALTY,
     TEMPERATURE,
 )
@@ -77,6 +83,42 @@ def build_llm(
             api_key="lm-studio",
             temperature=temperature if temperature is not None else TEMPERATURE,
             max_tokens=n_pred,
+            **kwargs,
+        )
+    if provider == "openai":
+        from langchain_openai import ChatOpenAI
+        base = (OPENAI_BASE_URL or "https://api.openai.com/v1").rstrip("/")
+        if not base.endswith("/v1"):
+            base = f"{base}/v1" if "/v1" not in base else base
+        n_pred = num_predict if num_predict is not None else (NUM_PREDICT if NUM_PREDICT > 0 else 4096)
+        api_key = OPENAI_API_KEY or "sk-placeholder"
+        return ChatOpenAI(
+            model=model,
+            base_url=base,
+            api_key=api_key,
+            temperature=temperature if temperature is not None else TEMPERATURE,
+            max_tokens=n_pred,
+            **kwargs,
+        )
+    if provider == "anthropic":
+        from langchain_anthropic import ChatAnthropic
+        n_pred = num_predict if num_predict is not None else (NUM_PREDICT if NUM_PREDICT > 0 else 8192)
+        return ChatAnthropic(
+            model=model,
+            base_url=ANTHROPIC_BASE_URL or None,
+            api_key=ANTHROPIC_API_KEY or "placeholder",
+            temperature=temperature if temperature is not None else TEMPERATURE,
+            max_tokens=n_pred,
+            **kwargs,
+        )
+    if provider == "google":
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        n_pred = num_predict if num_predict is not None else (NUM_PREDICT if NUM_PREDICT > 0 else 8192)
+        return ChatGoogleGenerativeAI(
+            model=model,
+            google_api_key=GOOGLE_API_KEY or "placeholder",
+            temperature=temperature if temperature is not None else TEMPERATURE,
+            max_output_tokens=n_pred,
             **kwargs,
         )
     from langchain_ollama import ChatOllama
