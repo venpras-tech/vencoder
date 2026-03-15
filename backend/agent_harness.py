@@ -1,17 +1,43 @@
 import asyncio
 import json
 import logging
+import queue
+import threading
 import time
 from datetime import datetime
 from typing import Any, AsyncGenerator, Dict, Optional
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
-from config import AGENT_MAX_STEPS, AGENT_TIMEOUT_SEC, MAX_HISTORY_MESSAGES, STEP_TIMEOUT_SEC
+from config import AGENT_MAX_STEPS, AGENT_TIMEOUT_SEC, MAX_HISTORY_MESSAGES, RUN_LLM_IN_THREAD, STEP_TIMEOUT_SEC
 
 MAX_HISTORY_MSG_CHARS = 4000
 
-log = logging.getLogger("agent_harness")
+try:
+    from logger import get_logger
+    log = get_logger("agent_harness")
+except Exception:
+    import logging
+    log = logging.getLogger("agent_harness")
+
+_active_cancel_events: set = set()
+_events_lock = threading.Lock()
+
+
+def _register_cancel_event(e: threading.Event) -> None:
+    with _events_lock:
+        _active_cancel_events.add(e)
+
+
+def _unregister_cancel_event(e: threading.Event) -> None:
+    with _events_lock:
+        _active_cancel_events.discard(e)
+
+
+def shutdown_llm_threads() -> None:
+    with _events_lock:
+        for e in _active_cancel_events:
+            e.set()
 
 
 def _response_meta_json(token_count: int, start_time: float, stop_reason: str) -> str:
@@ -215,6 +241,97 @@ async def stream_events(
         yield _response_meta_json(token_count, start_time, stop_reason) + "\n"
         return
     yield _response_meta_json(token_count, start_time, stop_reason) + "\n"
+
+
+def _run_stream_in_thread(
+    agent: Any,
+    message: str,
+    config: Optional[Dict[str, Any]],
+    timeout_sec: Optional[int],
+    max_steps: Optional[int],
+    history: Optional[list],
+    model_name: Optional[str],
+    chunk_queue: queue.Queue,
+    cancel_event: threading.Event,
+) -> None:
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        async def consume():
+            try:
+                async for chunk in stream_events(
+                    agent, message, config, timeout_sec, max_steps, history, model_name
+                ):
+                    if cancel_event.is_set():
+                        break
+                    chunk_queue.put(chunk)
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                if not cancel_event.is_set():
+                    chunk_queue.put(json.dumps({"type": "error", "content": str(e)}) + "\n")
+            finally:
+                chunk_queue.put(None)
+
+        async def watch_cancel(consume_task: asyncio.Task) -> None:
+            while not cancel_event.is_set():
+                await asyncio.sleep(0.2)
+            consume_task.cancel()
+
+        async def run():
+            consume_task = loop.create_task(consume())
+            cancel_task = loop.create_task(watch_cancel(consume_task))
+            try:
+                await consume_task
+            except asyncio.CancelledError:
+                pass
+            finally:
+                cancel_task.cancel()
+                try:
+                    await cancel_task
+                except asyncio.CancelledError:
+                    pass
+
+        loop.run_until_complete(run())
+    finally:
+        loop.close()
+
+
+async def stream_events_maybe_threaded(
+    agent: Any,
+    message: str,
+    config: Optional[Dict[str, Any]] = None,
+    timeout_sec: Optional[int] = None,
+    max_steps: Optional[int] = None,
+    history: Optional[list] = None,
+    model_name: Optional[str] = None,
+) -> AsyncGenerator[str, None]:
+    if not RUN_LLM_IN_THREAD:
+        async for chunk in stream_events(agent, message, config, timeout_sec, max_steps, history, model_name):
+            yield chunk
+        return
+
+    cancel_event = threading.Event()
+    _register_cancel_event(cancel_event)
+    chunk_queue = queue.Queue()
+    thread = threading.Thread(
+        target=_run_stream_in_thread,
+        args=(agent, message, config, timeout_sec, max_steps, history, model_name, chunk_queue, cancel_event),
+        daemon=True,
+    )
+    thread.start()
+    loop = asyncio.get_event_loop()
+    try:
+        while True:
+            chunk = await loop.run_in_executor(None, chunk_queue.get)
+            if chunk is None:
+                break
+            yield chunk
+    except asyncio.CancelledError:
+        cancel_event.set()
+        raise
+    finally:
+        _unregister_cancel_event(cancel_event)
 
 
 async def run(

@@ -1,0 +1,25 @@
+[package]
+name = "ai-codec"
+version = "1.0.0"
+description = "AI codec with Ollama, semantic index, and file tools"
+authors = ["AI Codec"]
+edition = "2021"
+rust-version = "1.70"
+
+[lib]
+name = "ai_codec_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

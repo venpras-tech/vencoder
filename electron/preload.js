@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setTheme: (theme) => ipcRenderer.invoke('set-theme', theme),
   readLogs: (type) => ipcRenderer.invoke('read-logs', type),
   openFolder: () => ipcRenderer.invoke('open-folder'),
+  openPath: (path) => ipcRenderer.invoke('open-path', path),
   openFile: () => ipcRenderer.invoke('open-file'),
   openImage: () => ipcRenderer.invoke('open-image'),
   saveFile: (defaultName, content) => ipcRenderer.invoke('save-file', defaultName, content),

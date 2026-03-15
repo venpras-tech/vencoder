@@ -8,4 +8,10 @@ __pycache__/
 *.pyc
 .env
 dist/
+dist-webview/
+app-icon.png
 python-runtime/
+electron/renderer.js.src
+backend-dist/
+backend-pack/
+src-tauri/target/*

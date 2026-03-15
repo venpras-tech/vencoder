@@ -39,7 +39,9 @@ def resolve_builtin_model_path(model: str) -> str:
         candidates = list(BUILTIN_MODELS_DIR.glob("*.gguf"))
     if candidates:
         return str(candidates[0])
-    return str(BUILTIN_MODELS_DIR / model) if not model.endswith(".gguf") else model
+    if model.endswith(".gguf"):
+        return model
+    return str(BUILTIN_MODELS_DIR / f"{model}.gguf")
 
 
 def build_llm(
@@ -59,18 +61,33 @@ def build_llm(
                 "(needs Visual Studio Build Tools on Windows)"
             ) from None
 
-        path = resolve_builtin_model_path(model)
+        path = str(Path(resolve_builtin_model_path(model)).resolve())
+        if not Path(path).exists():
+            raise FileNotFoundError(
+                f"Built-in model not found: {path}. "
+                "Download a GGUF model to that folder, or switch to Ollama in Settings."
+            )
         n_pred = num_predict if num_predict is not None else (NUM_PREDICT if NUM_PREDICT > 0 else 4096)
         n_ctx = num_ctx or NUM_CTX
-        return ChatLlamaCpp(
-            model_path=path,
-            temperature=temperature if temperature is not None else TEMPERATURE,
-            max_tokens=n_pred,
-            n_ctx=n_ctx,
-            n_gpu_layers=-1,
-            verbose=False,
-            **kwargs,
-        )
+        try:
+            return ChatLlamaCpp(
+                model_path=path,
+                temperature=temperature if temperature is not None else TEMPERATURE,
+                max_tokens=n_pred,
+                n_ctx=n_ctx,
+                n_gpu_layers=-1,
+                verbose=False,
+                **kwargs,
+            )
+        except Exception as e:
+            err = str(e)
+            if "Could not load" in err or "Failed to load" in err:
+                raise ValueError(
+                    f"Failed to load built-in model: {path}. "
+                    "The file may be corrupted or incompatible with your llama-cpp-python version. "
+                    "Try: pip install -U llama-cpp-python. Or switch to Ollama in Settings."
+                ) from e
+            raise
     if provider == "lmstudio":
         from langchain_openai import ChatOpenAI
         base = (LM_STUDIO_BASE_URL or "http://localhost:1234").rstrip("/")

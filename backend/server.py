@@ -1,10 +1,13 @@
 import asyncio
 import json
+import os
+import threading
 import urllib.request
+from time import time
 from typing import AsyncGenerator, Optional
 
 from fastapi import FastAPI, File, Header, HTTPException, Request, UploadFile
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
@@ -27,9 +30,17 @@ from config import (
     MULTI_MODEL_ENABLED,
     OLLAMA_BASE_URL,
     PREFERRED_MODELS,
+    WORKSPACE_ROOT,
 )
 from llm_builder import get_builtin_models
 from file_tree import get_file_tree, read_file_content
+from builtin_models import (
+    get_system_ram_gb,
+    get_system_tier,
+    get_suggested_for_system,
+    download_model as builtin_download_model,
+    download_model_with_progress as builtin_download_with_progress,
+)
 
 try:
     from logger import get_logger
@@ -53,6 +64,9 @@ app.add_middleware(
 
 current_model = LLM_MODEL
 _agent_cache: dict = {}
+_tree_cache: dict = {}
+_tree_cache_ttl = int(os.getenv("FILE_TREE_CACHE_TTL", "60"))
+_builtin_download_state: dict = {}
 
 
 def get_ollama_models():
@@ -109,15 +123,21 @@ def get_available_models() -> list[str]:
     return get_ollama_models()
 
 
-models = get_available_models()
-if models and current_model not in models:
-    for m in PREFERRED_MODELS:
-        if m in models:
-            current_model = m
-            break
-    else:
-        current_model = models[0]
-    log.warning("model '%s' not found, using '%s'", LLM_MODEL, current_model)
+def _ensure_current_model_valid():
+    global current_model
+    models = get_available_models()
+    if models and current_model not in models:
+        for m in PREFERRED_MODELS:
+            if m in models:
+                current_model = m
+                break
+        else:
+            current_model = models[0]
+        log.warning("model '%s' not found, using '%s'", LLM_MODEL, current_model)
+
+
+import threading
+threading.Thread(target=_ensure_current_model_valid, daemon=True).start()
 
 
 def get_agent(mode: str = "agent", model: Optional[str] = None):
@@ -448,8 +468,8 @@ async def stream_agent_events_with_history(
             use_orchestrator = False
     if not orchestrator_succeeded:
         try:
-            from agent_harness import stream_events as harness_stream_events
-            async for chunk in harness_stream_events(get_agent(mode, model=selected_model), agent_message, history=history, model_name=selected_model):
+            from agent_harness import stream_events_maybe_threaded
+            async for chunk in stream_events_maybe_threaded(get_agent(mode, model=selected_model), agent_message, history=history, model_name=selected_model):
                 raw = chunk.strip()
                 if raw:
                     try:
@@ -719,49 +739,114 @@ def set_model(req: ModelUpdate):
     return {"provider": get_provider_display_name(), "model": current_model}
 
 
-def _etag_for_tree(tree: list) -> str:
-    import hashlib
-    data = json.dumps(tree, sort_keys=True)
-    return hashlib.md5(data.encode()).hexdigest()
+@app.get("/builtin/system-info")
+def builtin_system_info():
+    return {"ram_gb": get_system_ram_gb(), "tier": get_system_tier()}
+
+
+@app.get("/builtin/suggested-models")
+def builtin_suggested_models():
+    from builtin_models import _llama_cpp_available
+    return {"suggested": get_suggested_for_system(), "llama_cpp_available": _llama_cpp_available()}
+
+
+class BuiltinDownloadRequest(BaseModel):
+    repo_id: str
+    filename: str
+
+
+@app.get("/builtin/models-dir")
+def builtin_models_dir():
+    from config import BUILTIN_MODELS_DIR
+    return {"path": str(BUILTIN_MODELS_DIR.resolve())}
+
+
+class BuiltinDeleteRequest(BaseModel):
+    filename: str
+
+
+@app.post("/builtin/delete")
+def builtin_delete(req: BuiltinDeleteRequest):
+    from config import BUILTIN_MODELS_DIR
+    if "/" in req.filename or "\\" in req.filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    base = BUILTIN_MODELS_DIR.resolve()
+    p = (base / req.filename).resolve()
+    if p.parent != base or not p.exists() or not p.is_file():
+        raise HTTPException(status_code=404, detail="Model not found")
+    try:
+        p.unlink()
+        return {"ok": True}
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/builtin/download")
+def builtin_download(req: BuiltinDownloadRequest):
+    ok, result = builtin_download_model(req.repo_id, req.filename)
+    if ok:
+        from pathlib import Path
+        stem = Path(req.filename).stem
+        return {"ok": True, "path": result, "model": stem}
+    raise HTTPException(status_code=500, detail=result)
+
+
+def _builtin_download_stream(repo_id: str, filename: str):
+    key = filename
+    _builtin_download_state[key] = {"progress": 0, "downloaded": 0, "total": 1}
+    try:
+        for obj in builtin_download_with_progress(repo_id, filename):
+            _builtin_download_state[key] = dict(obj)
+            yield (json.dumps(obj) + "\n").encode("utf-8")
+    except Exception as e:
+        _builtin_download_state[key] = {"error": str(e)}
+        raise
+    finally:
+        import threading
+        def _():
+            import time
+            time.sleep(30)
+            _builtin_download_state.pop(key, None)
+        threading.Thread(target=_, daemon=True).start()
+
+
+@app.get("/builtin/download-status")
+def builtin_download_status():
+    return {"downloads": dict(_builtin_download_state)}
+
+
+@app.post("/builtin/download-stream")
+def builtin_download_stream(req: BuiltinDownloadRequest):
+    return StreamingResponse(
+        _builtin_download_stream(req.repo_id, req.filename),
+        media_type="application/x-ndjson"
+    )
 
 
 @app.get("/files/tree")
-def files_tree(if_none_match: Optional[str] = Header(None)):
+def files_tree(refresh: bool = False):
     try:
+        root = str(WORKSPACE_ROOT.resolve())
+        now = time()
+        if not refresh and root in _tree_cache:
+            cached_tree, cached_at = _tree_cache[root]
+            if now - cached_at < _tree_cache_ttl:
+                return JSONResponse(content={"tree": cached_tree})
         tree = get_file_tree()
-        etag = _etag_for_tree(tree)
-        if if_none_match and if_none_match.strip('"') == etag:
-            return Response(status_code=304)
-        return JSONResponse(content={"tree": tree}, headers={"ETag": f'"{etag}"', "Cache-Control": "private, max-age=10"})
+        _tree_cache[root] = (tree, now)
+        return JSONResponse(content={"tree": tree})
     except Exception as e:
         log.exception("files_tree failed")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-def _etag_for_file(path: str) -> str:
-    import hashlib
-    from config import WORKSPACE_ROOT
-    try:
-        p = (WORKSPACE_ROOT / path).resolve()
-        mtime = p.stat().st_mtime if p.exists() else 0
-    except OSError:
-        mtime = 0
-    return hashlib.md5(f"{path}:{mtime}".encode()).hexdigest()
-
-
 @app.get("/files/content")
-def files_content(path: str = "", if_none_match: Optional[str] = Header(None)):
+def files_content(path: str = ""):
     if not path:
         raise HTTPException(status_code=400, detail="path required")
     try:
         content, ext = read_file_content(path)
-        etag = _etag_for_file(path)
-        if if_none_match and if_none_match.strip('"') == etag:
-            return Response(status_code=304)
-        return JSONResponse(
-            content={"content": content, "language": _ext_to_language(ext)},
-            headers={"ETag": f'"{etag}"', "Cache-Control": "private, max-age=30"},
-        )
+        return JSONResponse(content={"content": content, "language": _ext_to_language(ext)})
     except PermissionError:
         raise HTTPException(status_code=403, detail="Path outside workspace")
     except FileNotFoundError as e:
@@ -814,6 +899,22 @@ async def transcribe(audio: UploadFile = File(...), language: Optional[str] = No
     except Exception as e:
         log.exception("transcribe failed: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/shutdown")
+def shutdown():
+    def do_exit():
+        import time
+        try:
+            from agent_harness import shutdown_llm_threads
+            shutdown_llm_threads()
+        except ImportError:
+            pass
+        time.sleep(0.3)
+        os._exit(0)
+
+    threading.Thread(target=do_exit, daemon=True).start()
+    return {"ok": True}
 
 
 def run_server(host: str = "127.0.0.1", port: int = 8765):

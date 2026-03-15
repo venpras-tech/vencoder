@@ -2,6 +2,7 @@
   "name": "ai-codec",
   "version": "1.0.0",
   "description": "AI codec with Ollama, semantic index, and file tools",
+  "author": "AI Codec",
   "bin": {
     "codec": "scripts/codec.js"
   },
@@ -10,13 +11,18 @@
     "codec": "node scripts/codec.js",
     "start": "electron .",
     "prebuild": "node -e \"const fs=require('fs'); const p=require('path').join(__dirname,'python-runtime'); if(!fs.existsSync(p)) fs.mkdirSync(p,{recursive:true});\"",
-    "build": "npm run prebuild && electron-builder",
+    "build": "npm run prebuild && node scripts/obfuscate-renderer.js obfuscate && electron-builder; node scripts/obfuscate-renderer.js restore",
     "build:full": "node scripts/prepare-python.js && npm run build",
+    "build:protected": "node scripts/build-protected.js",
+    "build:protected:full": "node scripts/prepare-python.js && npm run build:protected",
     "build:win": "electron-builder --win",
     "build:mac": "electron-builder --mac",
     "build:linux": "electron-builder --linux",
     "pack": "electron-builder --dir",
-    "prepare-python": "node scripts/prepare-python.js"
+    "prepare-python": "node scripts/prepare-python.js",
+    "start:tauri": "npx tauri dev",
+    "build:tauri": "node scripts/copy-webview.js && npx tauri build",
+    "tauri:icon": "node scripts/create-app-icon.js && npx tauri icon app-icon.png -o src-tauri/icons"
   },
   "build": {
     "appId": "com.aicodec.app",
@@ -75,11 +81,16 @@
     "electronVersion": "28.0.0"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.10.1",
     "electron": "^28.0.0",
-    "electron-builder": "^24.13.3"
+    "electron-builder": "^24.13.3",
+    "javascript-obfuscator": "^4.1.1",
+    "pngjs": "^7.0.0",
+    "serve": "^14.2.6"
   },
   "dependencies": {
     "@highlightjs/cdn-assets": "^11.11.1",
+    "@tauri-apps/api": "^2.10.1",
     "highlight.js": "^11.11.1",
     "marked": "^17.0.3"
   }

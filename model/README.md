@@ -51,11 +51,12 @@ source venv/bin/activate
 pip install --upgrade pip
 pip install torch
 pip install -r requirements.txt
+pip install unsloth
 ```
 
-Install `torch` first; other packages depend on it.
+Install `torch` first; other packages depend on it. Unsloth is required for `finetune.py` and `export_ollama.py`.
 
-If you get dependency errors, try:
+If you get Unsloth dependency errors, try:
 
 ```bash
 pip install --upgrade --force-reinstall --no-cache-dir unsloth

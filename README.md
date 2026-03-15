@@ -84,6 +84,8 @@ The built app ships the backend in `resources/backend` and can bundle an embedde
 **Caching & performance:**
 - `KV_WARM_ENABLED` (default true) – Warms Ollama's model as you type; when you press Enter, the model is preloaded.
 - `VECTOR_CACHE_TTL` (default 300) – Seconds to cache semantic search results.
+- `FILE_TREE_CACHE_TTL` (default 60) – Seconds to cache the project file tree. Speeds up Project page when switching back.
+- `RUN_LLM_IN_THREAD` – When true, runs LLM inference in a background thread so the app stays responsive. Default: true for builtin/Ollama/LM Studio; set to false to disable.
 - `CACHE_DIR` – Override cache location (default: `%APPDATA%/ai-codec/cache` on Windows). Use an SSD or RAM disk for speed.
 - `OLLAMA_DRAFT_MODEL` – For speculative decoding when Ollama adds support; reserve for future use.
 

@@ -9,7 +9,11 @@ from langchain_core.messages import HumanMessage
 from llm_builder import build_llm
 from multi_agent import MODEL_CODER, MODEL_PLANNER
 
-log = logging.getLogger("orchestrator")
+try:
+    from logger import get_logger
+    log = get_logger("orchestrator")
+except Exception:
+    log = logging.getLogger("orchestrator")
 
 PLANNER_PROMPT = """You are a task planner. Break the user's coding request into 2-6 ordered subtasks.
 
@@ -150,7 +154,7 @@ async def _run_subtask_stream(
     history: list,
     get_agent_fn,
 ) -> AsyncGenerator[str, None]:
-    from agent_harness import stream_events
+    from agent_harness import stream_events_maybe_threaded as stream_events
     focused = f"[Subtask {subtask.id}] {subtask.task}\n\nPart of larger request: {message[:200]}"
     full_message = f"{project_context}\n\n--- Task ---\n\n{focused}" if project_context else focused
     tokens = []

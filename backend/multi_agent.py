@@ -6,7 +6,11 @@ from langchain_core.messages import HumanMessage
 from config import MODEL_CODER, MODEL_PLANNER, MODEL_VL, PREFERRED_MODELS
 from llm_builder import build_llm
 
-log = logging.getLogger("multi_agent")
+try:
+    from logger import get_logger
+    log = get_logger("multi_agent")
+except Exception:
+    log = logging.getLogger("multi_agent")
 
 ROUTER_PROMPT = """Classify this request. Reply with ONLY one word:
 - greeting: hi, hello, thanks, bye, ok—no task

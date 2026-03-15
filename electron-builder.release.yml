@@ -1,0 +1,30 @@
+appId: com.aicodec.app
+productName: AI Codec
+directories:
+  output: dist
+  buildResources: build
+files:
+  - package.json
+  - electron/**/*
+  - scripts/**/*
+  - node_modules/@highlightjs/cdn-assets/highlight.js
+  - node_modules/@highlightjs/cdn-assets/styles/github-dark.min.css
+extraResources:
+  - from: backend-pack
+    to: backend
+    filter: ["**/*"]
+  - from: python-runtime
+    to: python
+    filter: ["**/*"]
+win:
+  target: [portable, nsis]
+  signAndEditExecutable: false
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+mac:
+  target: [dmg, zip]
+  category: public.app-category.developer-tools
+linux:
+  target: [AppImage, deb]
+electronVersion: 28.0.0

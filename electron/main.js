@@ -1,7 +1,7 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
 
 function getLogPath() {
   try {
@@ -35,6 +35,20 @@ function log(level, ...args) {
   } catch (_) {}
   const out = level === 'ERROR' ? console.error : console.log;
   out(`[${level}]`, ...args);
+}
+
+function isLlamaDeallocatorNoise(s) {
+  if (!s) return true;
+  const patterns = [
+    /Exception ignored while calling deallocator.*LlamaModel/i,
+    /Traceback \(most recent call last\):/,
+    /llama_cpp[\\/]_internals\.py/,
+    /in __del__/,
+    /\bin close\s*$/m,
+    /self\.sampler/,
+    /'LlamaModel' object has no attribute 'sampler'/
+  ];
+  return patterns.some((p) => p.test(s));
 }
 
 function writeCrashLog(err) {
@@ -177,10 +191,14 @@ function startBackend(workspaceRoot) {
     return;
   }
   const settings = getAppSettings();
+  const dataDir = app.getPath('userData');
+  const modelsDir = path.join(path.dirname(dataDir), 'ai-codec', 'models');
+  try { fs.mkdirSync(modelsDir, { recursive: true }); } catch (_) {}
   const env = {
     ...process.env,
     PYTHONPATH: backendDir,
-    WORKSPACE_ROOT: workspaceRoot || projectPath
+    WORKSPACE_ROOT: workspaceRoot || projectPath,
+    BUILTIN_MODELS_DIR: modelsDir
   };
   const provider = settings.llmProvider || 'Ollama';
   const providerEnv = provider === 'Built-in' ? 'builtin' : provider === 'LM Studio' ? 'lmstudio' : provider === 'OpenAI' ? 'openai' : provider === 'Anthropic' ? 'anthropic' : provider === 'Google' ? 'google' : 'ollama';
@@ -225,6 +243,7 @@ function startBackend(workspaceRoot) {
     });
     proc.stderr.on('data', (data) => {
       const s = data.toString().trim();
+      if (isLlamaDeallocatorNoise(s)) return;
       log('INFO', '[backend stderr]', s);
     });
     proc.on('error', (err) => {
@@ -255,7 +274,11 @@ function startBackend(workspaceRoot) {
       });
       backendProcess = proc;
       proc.stdout.on('data', (d) => log('INFO', '[backend]', d.toString().trim()));
-      proc.stderr.on('data', (d) => log('INFO', '[backend stderr]', d.toString().trim()));
+      proc.stderr.on('data', (d) => {
+        const s = d.toString().trim();
+        if (isLlamaDeallocatorNoise(s)) return;
+        log('INFO', '[backend stderr]', s);
+      });
       proc.on('error', (err) => {
         log('ERROR', 'Backend spawn error:', cmd, err.message);
         backendProcess = null;
@@ -292,7 +315,11 @@ function startBackend(workspaceRoot) {
         });
         backendProcess = proc;
         proc.stdout.on('data', (d) => log('INFO', '[backend]', d.toString().trim()));
-        proc.stderr.on('data', (d) => log('INFO', '[backend stderr]', d.toString().trim()));
+        proc.stderr.on('data', (d) => {
+          const s = d.toString().trim();
+          if (isLlamaDeallocatorNoise(s)) return;
+          log('INFO', '[backend stderr]', s);
+        });
         proc.on('error', (err) => {
           log('ERROR', 'Backend spawn error:', cmd, err.message);
           backendProcess = null;
@@ -319,9 +346,33 @@ function startBackend(workspaceRoot) {
 }
 
 function stopBackend() {
-  if (backendProcess) {
-    backendProcess.kill();
-    backendProcess = null;
+  if (!backendProcess) return;
+  const proc = backendProcess;
+  backendProcess = null;
+  try {
+    const http = require('http');
+    const req = http.request({
+      hostname: BACKEND_HOST,
+      port: BACKEND_PORT,
+      path: '/shutdown',
+      method: 'POST'
+    }, () => {});
+    req.on('error', () => {});
+    req.setTimeout(500, () => req.destroy());
+    req.end();
+  } catch (_) {}
+  if (process.platform === 'win32') {
+    try {
+      execSync(`taskkill /pid ${proc.pid} /f /t`, { stdio: 'ignore', windowsHide: true });
+    } catch (_) {
+      try { proc.kill(); } catch (_) {}
+    }
+  } else {
+    try {
+      proc.kill('SIGKILL');
+    } catch (_) {
+      try { proc.kill(); } catch (_) {}
+    }
   }
 }
 
@@ -494,7 +545,7 @@ app.whenReady().then(async () => {
         log('INFO', 'Main window ready-to-show timeout, showing anyway');
         showMain();
       }
-    }, 15000);
+    }, 5000);
   } catch (err) {
     writeCrashLog(err);
     log('ERROR', 'Startup failed', err.stack || err);
@@ -611,8 +662,9 @@ const LOG_READ_MAX_BYTES = 2 * 1024 * 1024;
 
 ipcMain.handle('read-logs', (_, logType) => {
   try {
-    const p = logType === 'backend'
-      ? path.join(projectPath || '.', 'logs', 'server.log')
+    const serverLog = path.join(projectPath || '.', 'logs', 'server.log');
+    const p = logType === 'backend' || logType === 'agent'
+      ? serverLog
       : getLogPath();
     if (fs.existsSync(p)) {
       const stat = fs.statSync(p);
@@ -640,6 +692,16 @@ ipcMain.handle('open-folder', async () => {
   });
   if (result.canceled || !result.filePaths.length) return null;
   return result.filePaths[0];
+});
+
+ipcMain.handle('open-path', async (_, pathToOpen) => {
+  if (!pathToOpen || typeof pathToOpen !== 'string') return false;
+  try {
+    const err = await shell.openPath(pathToOpen);
+    return !err;
+  } catch (e) {
+    return false;
+  }
 });
 
 ipcMain.handle('open-file', async () => {
