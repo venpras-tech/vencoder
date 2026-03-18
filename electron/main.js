@@ -628,6 +628,41 @@ app.on('before-quit', () => {
 ipcMain.handle('get-backend-url', () => `http://${BACKEND_HOST}:${BACKEND_PORT}`);
 ipcMain.handle('get-project-path', () => projectPath);
 
+const TREE_IGNORE = /(\/|^)(\.git|node_modules|__pycache__|\.venv|venv|\.env|dist|build|chroma_data|\.codec-agent)(\/|$)/i;
+
+function buildFileTree(dirPath, relPrefix) {
+  const items = [];
+  try {
+    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    entries.sort((a, b) => {
+      const aFirst = a.isFile() ? 1 : 0;
+      const bFirst = b.isFile() ? 1 : 0;
+      if (aFirst !== bFirst) return aFirst - bFirst;
+      return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+    });
+    for (const e of entries) {
+      const rel = relPrefix ? `${relPrefix}/${e.name}` : e.name;
+      const relNorm = rel.replace(/\\/g, '/');
+      if (TREE_IGNORE.test(relNorm)) continue;
+      if (e.isDirectory()) {
+        const children = buildFileTree(path.join(dirPath, e.name), rel);
+        items.push({ name: e.name, path: rel, type: 'folder', children });
+      } else if (e.isFile()) {
+        items.push({ name: e.name, path: rel, type: 'file' });
+      }
+    }
+  } catch (err) {
+    if (err.code !== 'EPERM') log('ERROR', 'buildFileTree', err.message);
+  }
+  return items;
+}
+
+ipcMain.handle('get-file-tree', () => {
+  const root = path.resolve(projectPath || '.');
+  if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) return { tree: [] };
+  return { tree: buildFileTree(root, '') };
+});
+
 ipcMain.handle('get-log-path', () => getLogPath());
 
 ipcMain.handle('get-log-dir', () => {

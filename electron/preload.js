@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('electronAPI', {
   getBackendUrl: () => ipcRenderer.invoke('get-backend-url'),
   getProjectPath: () => ipcRenderer.invoke('get-project-path'),
+  getFileTree: () => ipcRenderer.invoke('get-file-tree'),
   getLogPath: () => ipcRenderer.invoke('get-log-path'),
   getLogDir: () => ipcRenderer.invoke('get-log-dir'),
   setLogDir: (dir) => ipcRenderer.invoke('set-log-dir', dir),
