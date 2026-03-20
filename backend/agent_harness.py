@@ -40,11 +40,12 @@ def shutdown_llm_threads() -> None:
             e.set()
 
 
-def _response_meta_json(token_count: int, start_time: float, stop_reason: str) -> str:
+def _response_meta_json(token_count: int, start_time: float, stop_reason: str, model: str = "") -> str:
     duration_ms = int((time.monotonic() - start_time) * 1000)
     tok_per_sec = token_count / (duration_ms / 1000) if duration_ms > 0 else 0
     return json.dumps({
         "type": "response_meta",
+        "model": model,
         "tokens": token_count,
         "duration_ms": duration_ms,
         "tok_per_sec": round(tok_per_sec, 2),
@@ -232,15 +233,15 @@ async def stream_events(
     except asyncio.CancelledError:
         stop_reason = "User Stopped"
         yield json.dumps({"type": "error", "content": "Agent run cancelled"}) + "\n"
-        yield _response_meta_json(token_count, start_time, stop_reason) + "\n"
+        yield _response_meta_json(token_count, start_time, stop_reason, model) + "\n"
         raise
     except Exception as e:
         stop_reason = "error"
         log.exception("harness stream_events failed")
         yield json.dumps({"type": "error", "content": str(e)}) + "\n"
-        yield _response_meta_json(token_count, start_time, stop_reason) + "\n"
+        yield _response_meta_json(token_count, start_time, stop_reason, model) + "\n"
         return
-    yield _response_meta_json(token_count, start_time, stop_reason) + "\n"
+    yield _response_meta_json(token_count, start_time, stop_reason, model) + "\n"
 
 
 def _run_stream_in_thread(

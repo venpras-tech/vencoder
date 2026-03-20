@@ -51,7 +51,7 @@ def build_llm(
     num_ctx: Optional[int] = None,
     **kwargs: Any,
 ):
-    provider = (LLM_PROVIDER or "ollama").lower()
+    provider = (LLM_PROVIDER or "builtin").lower()
     if provider == "builtin":
         try:
             from langchain_community.chat_models.llamacpp import ChatLlamaCpp
@@ -75,6 +75,7 @@ def build_llm(
                 temperature=temperature if temperature is not None else TEMPERATURE,
                 max_tokens=n_pred,
                 n_ctx=n_ctx,
+                n_batch=512,
                 n_gpu_layers=-1,
                 verbose=False,
                 **kwargs,

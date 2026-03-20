@@ -67,6 +67,7 @@ _agent_cache: dict = {}
 _tree_cache: dict = {}
 _tree_cache_ttl = int(os.getenv("FILE_TREE_CACHE_TTL", "60"))
 _builtin_download_state: dict = {}
+_builtin_download_cancel_requested: set = set()
 
 
 def get_ollama_models():
@@ -99,7 +100,7 @@ GOOGLE_MODELS = ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-1.0-pro"]
 
 
 def get_provider() -> str:
-    return (LLM_PROVIDER or "ollama").lower()
+    return (LLM_PROVIDER or "builtin").lower()
 
 
 def get_provider_display_name() -> str:
@@ -352,6 +353,7 @@ async def stream_agent_events_with_history(
             content = (getattr(reply, "content", "") or str(reply)).strip()
             if content:
                 add_message(conv_id, "assistant", content)
+                yield json.dumps({"type": "model", "model": selected_model}) + "\n"
                 for ch in content:
                     yield json.dumps({"type": "token", "content": ch}) + "\n"
                 if is_new:
@@ -379,6 +381,7 @@ async def stream_agent_events_with_history(
                     models,
                 )
                 add_message(conv_id, "assistant", result)
+                yield json.dumps({"type": "model", "model": selected_model}) + "\n"
                 yield json.dumps({"type": "phase", "phase": "streaming"}) + "\n"
                 for ch in result:
                     yield json.dumps({"type": "token", "content": ch}) + "\n"
@@ -426,6 +429,7 @@ async def stream_agent_events_with_history(
     history = msgs[:-1] if msgs else []
     if plan_prefix:
         yield json.dumps({"type": "phase", "phase": "processing", "step": "Execution plan ready…"}) + "\n"
+    yield json.dumps({"type": "model", "model": selected_model}) + "\n"
     from multi_agent import MODEL_CODER, MODEL_PLANNER
     use_orchestrator = (
         MULTI_AGENT_ORCHESTRATOR_ENABLED
@@ -533,6 +537,38 @@ def warm_cache(req: Optional[WarmRequest] = None):
         return {"status": "error", "detail": str(e)}
 
 
+@app.get("/probe/available")
+def probe_available():
+    ollama_ok = False
+    ollama_models = []
+    lmstudio_ok = False
+    lmstudio_models = []
+    try:
+        req = urllib.request.Request(f"{OLLAMA_BASE_URL}/api/tags", method="GET")
+        with urllib.request.urlopen(req, timeout=2) as r:
+            if r.status == 200:
+                data = json.loads(r.read().decode())
+                ollama_models = [m.get("name", "") for m in data.get("models", []) if m.get("name")]
+                ollama_ok = True
+    except Exception as e:
+        log.debug("probe ollama failed: %s", e)
+    try:
+        base = (LM_STUDIO_BASE_URL or "http://localhost:1234").rstrip("/")
+        url = f"{base}/v1/models" if not base.endswith("/v1") else f"{base}/models"
+        req = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(req, timeout=2) as r:
+            if r.status == 200:
+                data = json.loads(r.read().decode())
+                lmstudio_models = [m.get("id", "") for m in data.get("data", []) if m.get("id")]
+                lmstudio_ok = True
+    except Exception as e:
+        log.debug("probe lmstudio failed: %s", e)
+    return {
+        "ollama": {"available": ollama_ok, "models": ollama_models},
+        "lmstudio": {"available": lmstudio_ok, "models": lmstudio_models},
+    }
+
+
 @app.get("/health")
 def health():
     provider = get_provider()
@@ -598,6 +634,17 @@ def cancel_shell():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/cancel-chat")
+def cancel_chat():
+    try:
+        from agent_harness import shutdown_llm_threads
+        shutdown_llm_threads()
+        return {"status": "ok"}
+    except Exception as e:
+        log.exception("cancel_chat failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/history")
 def get_history(limit: int = 100, offset: int = 0):
     try:
@@ -608,11 +655,30 @@ def get_history(limit: int = 100, offset: int = 0):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _export_to_markdown(conversations: list) -> str:
+    lines = []
+    for c in conversations:
+        lines.append(f"# {c['title']}\n")
+        lines.append(f"*Exported: {c['created_at']}*\n\n")
+        for m in c.get("messages", []):
+            role = m.get("role", "unknown")
+            content = (m.get("content") or "").strip()
+            if role == "user":
+                lines.append("## User\n\n")
+            else:
+                lines.append("## Assistant\n\n")
+            lines.append(content + "\n\n")
+        lines.append("---\n\n")
+    return "".join(lines)
+
+
 @app.get("/history/export")
-def export_history(ids: str = ""):
+def export_history(ids: str = "", format: str = "json"):
     try:
         id_list = [int(x.strip()) for x in ids.split(",") if x.strip()]
         if not id_list:
+            if format in ("markdown", "md"):
+                return Response(content="", media_type="text/markdown")
             return {"conversations": []}
         convos, _ = list_conversations(limit=10000, offset=0)
         result = []
@@ -620,6 +686,9 @@ def export_history(ids: str = ""):
             if c["id"] in id_list:
                 msgs = get_messages(c["id"])
                 result.append({"id": c["id"], "title": c["title"], "created_at": c["created_at"], "messages": msgs})
+        if format == "markdown" or format == "md":
+            content = _export_to_markdown(result)
+            return Response(content=content, media_type="text/markdown")
         return {"conversations": result}
     except Exception as e:
         log.exception("export_history failed")
@@ -746,8 +815,12 @@ def builtin_system_info():
 
 @app.get("/builtin/suggested-models")
 def builtin_suggested_models():
-    from builtin_models import _llama_cpp_available
-    return {"suggested": get_suggested_for_system(), "llama_cpp_available": _llama_cpp_available()}
+    try:
+        from builtin_models import _llama_cpp_available
+        return {"suggested": get_suggested_for_system(), "llama_cpp_available": _llama_cpp_available()}
+    except Exception as e:
+        log.warning("builtin suggested-models failed: %s", e)
+        return {"suggested": [], "llama_cpp_available": False}
 
 
 class BuiltinDownloadRequest(BaseModel):
@@ -792,22 +865,60 @@ def builtin_download(req: BuiltinDownloadRequest):
 
 
 def _builtin_download_stream(repo_id: str, filename: str):
+    import queue
     key = filename
+    result_queue = queue.Queue()
+
+    def should_cancel():
+        return key in _builtin_download_cancel_requested
+
+    def run_download():
+        try:
+            for obj in builtin_download_with_progress(repo_id, filename, should_cancel=should_cancel):
+                result_queue.put(obj)
+            result_queue.put(None)
+        except Exception as e:
+            result_queue.put({"error": str(e)})
+            result_queue.put(None)
+
     _builtin_download_state[key] = {"progress": 0, "downloaded": 0, "total": 1}
+    t = threading.Thread(target=run_download, daemon=True)
+    t.start()
     try:
-        for obj in builtin_download_with_progress(repo_id, filename):
+        while True:
+            obj = result_queue.get(timeout=300)
+            if obj is None:
+                break
             _builtin_download_state[key] = dict(obj)
             yield (json.dumps(obj) + "\n").encode("utf-8")
+    except queue.Empty:
+        _builtin_download_state[key] = {"error": "Download timeout"}
     except Exception as e:
         _builtin_download_state[key] = {"error": str(e)}
         raise
     finally:
-        import threading
+        _builtin_download_cancel_requested.discard(key)
         def _():
             import time
             time.sleep(30)
             _builtin_download_state.pop(key, None)
         threading.Thread(target=_, daemon=True).start()
+
+
+@app.post("/builtin/download-cancel")
+def builtin_download_cancel(req: BuiltinDeleteRequest):
+    from config import BUILTIN_MODELS_DIR
+    _builtin_download_cancel_requested.add(req.filename)
+    _builtin_download_state.pop(req.filename, None)
+    if "/" not in req.filename and "\\" not in req.filename:
+        base = BUILTIN_MODELS_DIR.resolve()
+        p = (base / req.filename).resolve()
+        if p.parent == base and p.exists() and p.is_file():
+            try:
+                p.unlink()
+            except OSError:
+                pass
+    return {"ok": True}
 
 
 @app.get("/builtin/download-status")
@@ -837,6 +948,34 @@ def files_tree(refresh: bool = False):
         return JSONResponse(content={"tree": tree})
     except Exception as e:
         log.exception("files_tree failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/project/templates")
+def project_templates():
+    from project_templates import list_templates
+    return {"templates": list_templates()}
+
+
+class CreateProjectTemplateRequest(BaseModel):
+    name: str
+    content: Optional[str] = None
+
+
+@app.post("/project/template")
+def create_project_template(req: CreateProjectTemplateRequest):
+    from project_templates import get_template
+    from config import WORKSPACE_ROOT
+    content = req.content or get_template(req.name)
+    if not content:
+        raise HTTPException(status_code=400, detail=f"Unknown template: {req.name}")
+    dir_path = WORKSPACE_ROOT / ".codec-agent"
+    dir_path.mkdir(parents=True, exist_ok=True)
+    file_path = dir_path / "project.md"
+    try:
+        file_path.write_text(content, encoding="utf-8")
+        return {"path": str(file_path), "ok": True}
+    except OSError as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 

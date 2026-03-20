@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const fsp = require('fs').promises;
 const { spawn, execSync } = require('child_process');
 
 function getLogPath() {
@@ -200,7 +201,7 @@ function startBackend(workspaceRoot) {
     WORKSPACE_ROOT: workspaceRoot || projectPath,
     BUILTIN_MODELS_DIR: modelsDir
   };
-  const provider = settings.llmProvider || 'Ollama';
+  const provider = settings.llmProvider || 'Built-in';
   const providerEnv = provider === 'Built-in' ? 'builtin' : provider === 'LM Studio' ? 'lmstudio' : provider === 'OpenAI' ? 'openai' : provider === 'Anthropic' ? 'anthropic' : provider === 'Google' ? 'google' : 'ollama';
   env.LLM_PROVIDER = providerEnv;
   if (settings.llmModel) env.LLM_MODEL = settings.llmModel;
@@ -220,6 +221,14 @@ function startBackend(workspaceRoot) {
     if (baseUrl) env.GOOGLE_BASE_URL = baseUrl;
     if (apiKey) env.GOOGLE_API_KEY = apiKey;
   }
+  const numCtx = settings.numCtx;
+  if (numCtx != null && numCtx !== '') env.NUM_CTX = String(numCtx);
+  const temperature = settings.temperature;
+  if (temperature != null && temperature !== '') env.TEMPERATURE = String(temperature);
+  const repeatPenalty = settings.repeatPenalty;
+  if (repeatPenalty != null && repeatPenalty !== '') env.REPEAT_PENALTY = String(repeatPenalty);
+  const numPredict = settings.numPredict;
+  if (numPredict != null && numPredict !== '') env.NUM_PREDICT = String(numPredict);
   if (app.isPackaged) {
     const bundled = getBundledPythonPath();
     if (bundled) {
@@ -630,10 +639,10 @@ ipcMain.handle('get-project-path', () => projectPath);
 
 const TREE_IGNORE = /(\/|^)(\.git|node_modules|__pycache__|\.venv|venv|\.env|dist|build|chroma_data|\.codec-agent)(\/|$)/i;
 
-function buildFileTree(dirPath, relPrefix) {
+async function buildFileTree(dirPath, relPrefix) {
   const items = [];
   try {
-    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    const entries = await fsp.readdir(dirPath, { withFileTypes: true });
     entries.sort((a, b) => {
       const aFirst = a.isFile() ? 1 : 0;
       const bFirst = b.isFile() ? 1 : 0;
@@ -645,7 +654,7 @@ function buildFileTree(dirPath, relPrefix) {
       const relNorm = rel.replace(/\\/g, '/');
       if (TREE_IGNORE.test(relNorm)) continue;
       if (e.isDirectory()) {
-        const children = buildFileTree(path.join(dirPath, e.name), rel);
+        const children = await buildFileTree(path.join(dirPath, e.name), rel);
         items.push({ name: e.name, path: rel, type: 'folder', children });
       } else if (e.isFile()) {
         items.push({ name: e.name, path: rel, type: 'file' });
@@ -657,10 +666,45 @@ function buildFileTree(dirPath, relPrefix) {
   return items;
 }
 
-ipcMain.handle('get-file-tree', () => {
+ipcMain.handle('get-file-tree', async () => {
   const root = path.resolve(projectPath || '.');
-  if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) return { tree: [] };
-  return { tree: buildFileTree(root, '') };
+  try {
+    const stat = await fsp.stat(root);
+    if (!stat.isDirectory()) return { tree: [] };
+  } catch (_) {
+    return { tree: [] };
+  }
+  return { tree: await buildFileTree(root, '') };
+});
+
+const EXT_TO_LANGUAGE = {
+  '.py': 'python', '.js': 'javascript', '.ts': 'typescript', '.jsx': 'javascript',
+  '.tsx': 'typescript', '.json': 'json', '.md': 'markdown', '.html': 'html',
+  '.css': 'css', '.scss': 'scss', '.yaml': 'yaml', '.yml': 'yaml',
+  '.sh': 'shell', '.bash': 'shell', '.sql': 'sql', '.xml': 'xml',
+  '.go': 'go', '.rs': 'rust', '.java': 'java', '.kt': 'kotlin',
+  '.cs': 'csharp', '.cpp': 'cpp', '.c': 'c', '.h': 'c'
+};
+const MAX_READ_FILE_SIZE = 1024 * 1024;
+
+ipcMain.handle('get-file-content', async (_, relPath) => {
+  if (!relPath || typeof relPath !== 'string') return null;
+  const root = path.resolve(projectPath || '.');
+  const fullPath = path.resolve(root, relPath.replace(/\//g, path.sep));
+  try {
+    const rel = path.relative(root, fullPath);
+    if (rel.startsWith('..') || path.isAbsolute(rel)) return null;
+    const stat = await fsp.stat(fullPath);
+    if (!stat.isFile()) return null;
+    if (stat.size > MAX_READ_FILE_SIZE) return null;
+    const content = await fsp.readFile(fullPath, 'utf8');
+    const ext = path.extname(fullPath).toLowerCase();
+    const language = EXT_TO_LANGUAGE[ext] || 'plaintext';
+    return { content, language };
+  } catch (e) {
+    if (e.code !== 'ENOENT' && e.code !== 'EPERM') log('ERROR', 'get-file-content', e.message);
+    return null;
+  }
 });
 
 ipcMain.handle('get-log-path', () => getLogPath());
@@ -673,11 +717,11 @@ ipcMain.handle('get-log-dir', () => {
 ipcMain.handle('get-theme', () => {
   const settings = getAppSettings();
   const t = settings.theme;
-  return (t === 'light' || t === 'dark' || t === 'system') ? t : 'system';
+  return (t === 'light' || t === 'dark' || t === 'system' || t === 'high-contrast') ? t : 'system';
 });
 
 ipcMain.handle('set-theme', (_, theme) => {
-  if (theme === 'light' || theme === 'dark' || theme === 'system') {
+  if (theme === 'light' || theme === 'dark' || theme === 'system' || theme === 'high-contrast') {
     setAppSettings({ theme });
     return true;
   }
@@ -698,9 +742,8 @@ const LOG_READ_MAX_BYTES = 2 * 1024 * 1024;
 ipcMain.handle('read-logs', (_, logType) => {
   try {
     const serverLog = path.join(projectPath || '.', 'logs', 'server.log');
-    const p = logType === 'backend' || logType === 'agent'
-      ? serverLog
-      : getLogPath();
+    const appLog = getLogPath();
+    const p = (logType === 'backend' || logType === 'agent') ? serverLog : appLog;
     if (fs.existsSync(p)) {
       const stat = fs.statSync(p);
       if (stat.size > LOG_READ_MAX_BYTES) {
@@ -807,6 +850,10 @@ ipcMain.handle('set-llm-config', (_, cfg) => {
     if (typeof cfg.model === 'string') updates.llmModel = cfg.model;
     if (typeof cfg.baseUrl === 'string') updates.llmBaseUrl = cfg.baseUrl.trim();
     if (typeof cfg.apiKey === 'string') updates.llmApiKey = cfg.apiKey;
+    if (cfg.numCtx !== undefined) updates.numCtx = cfg.numCtx;
+    if (cfg.temperature !== undefined) updates.temperature = cfg.temperature;
+    if (cfg.repeatPenalty !== undefined) updates.repeatPenalty = cfg.repeatPenalty;
+    if (cfg.numPredict !== undefined) updates.numPredict = cfg.numPredict;
     if (Object.keys(updates).length) {
       setAppSettings(updates);
       return true;
@@ -821,7 +868,11 @@ ipcMain.handle('get-llm-config', () => {
     provider: s.llmProvider || 'Ollama',
     model: s.llmModel || '',
     baseUrl: s.llmBaseUrl || '',
-    apiKey: s.llmApiKey ? '***' : ''
+    apiKey: s.llmApiKey ? '***' : '',
+    numCtx: s.numCtx ?? '',
+    temperature: s.temperature ?? '',
+    repeatPenalty: s.repeatPenalty ?? '',
+    numPredict: s.numPredict ?? ''
   };
 });
 

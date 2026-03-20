@@ -6,6 +6,22 @@
       headers: { 'Content-Type': 'application/json' }
     }));
   }
+  function getPathFromUrl(urlStr) {
+    try {
+      var idx = urlStr.indexOf('?');
+      if (idx === -1) return null;
+      var qs = urlStr.slice(idx + 1);
+      var params = qs.split('&');
+      for (var i = 0; i < params.length; i++) {
+        var p = params[i];
+        if (p.indexOf('path=') === 0) {
+          return decodeURIComponent(p.slice(5).replace(/\+/g, ' '));
+        }
+      }
+    } catch (e) {}
+    return null;
+  }
+
   window.fetch = function(url, opts) {
     var urlStr = typeof url === 'string' ? url : (url && url.url) || '';
     if (urlStr.indexOf('/files/tree') !== -1) {
@@ -33,6 +49,18 @@
         clone.json().then(function(data) { treeCache = data; }).catch(function() {});
         return r;
       });
+    }
+    if (urlStr.indexOf('/files/content') !== -1) {
+      var api = window.electronAPI;
+      var relPath = getPathFromUrl(urlStr);
+      if (api && api.getFileContent && relPath) {
+        return api.getFileContent(relPath).then(function(data) {
+          if (data) return makeTreeResponse(data);
+          return origFetch(url, opts);
+        }).catch(function() {
+          return origFetch(url, opts);
+        });
+      }
     }
     return origFetch.apply(this, arguments);
   };

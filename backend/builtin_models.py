@@ -124,7 +124,7 @@ def download_model(repo_id: str, filename: str) -> tuple[bool, str]:
         return False, str(e)
 
 
-def download_model_with_progress(repo_id: str, filename: str):
+def download_model_with_progress(repo_id: str, filename: str, should_cancel=None):
     ok, err = ensure_llama_cpp_python()
     if not ok:
         yield {"error": err}
@@ -138,12 +138,16 @@ def download_model_with_progress(repo_id: str, filename: str):
     try:
         import urllib.request
         req = urllib.request.Request(url, headers={"User-Agent": "VenCode/1.0"})
+        cancelled = False
         with urllib.request.urlopen(req, timeout=30) as resp:
             total = int(resp.headers.get("Content-Length", 0)) or 1
             with open(dest, "wb") as f:
                 downloaded = 0
-                chunk = 65536
+                chunk = 8192
                 while True:
+                    if should_cancel and should_cancel():
+                        cancelled = True
+                        break
                     data = resp.read(chunk)
                     if not data:
                         break
@@ -151,8 +155,14 @@ def download_model_with_progress(repo_id: str, filename: str):
                     downloaded += len(data)
                     pct = min(1.0, downloaded / total)
                     yield {"progress": pct, "downloaded": downloaded, "total": total}
+        if cancelled and dest.exists():
+            dest.unlink()
+            return
         yield {"ok": True, "path": str(dest), "model": dest.stem}
     except Exception as e:
         if dest.exists():
-            dest.unlink()
+            try:
+                dest.unlink()
+            except OSError:
+                pass
         yield {"error": str(e)}

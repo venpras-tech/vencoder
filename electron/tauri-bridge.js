@@ -6,6 +6,8 @@
   window.electronAPI = {
     getBackendUrl: () => invoke('get_backend_url'),
     getProjectPath: () => invoke('get_project_path'),
+    getFileTree: () => invoke('get_file_tree'),
+    getFileContent: (relPath) => invoke('get_file_content', { relPath }),
     getLogPath: () => invoke('get_log_path'),
     getLogDir: () => invoke('get_log_dir'),
     setLogDir: (dir) => invoke('set_log_dir', { dir: dir || null }),

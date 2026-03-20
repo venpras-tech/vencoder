@@ -3,7 +3,7 @@ from langchain_core.tools import tool
 from semantic_index import get_vector_store, query_index, ensure_indexed
 
 _SEARCH_RETRIES = 3
-_SEARCH_RETRY_DELAY = 0.5
+_SEARCH_RETRY_BASE = 0.5
 
 
 _MAX_CHUNK_CHARS = 4000
@@ -22,7 +22,8 @@ def search_context(query: str, k: int = 6) -> str:
         except Exception as e:
             last_err = e
             if attempt < _SEARCH_RETRIES - 1:
-                time.sleep(_SEARCH_RETRY_DELAY)
+                delay = _SEARCH_RETRY_BASE * (2 ** attempt)
+                time.sleep(delay)
     else:
         return f"Search failed: {last_err}. Index may be empty; try indexing the workspace first."
     if not results:

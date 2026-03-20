@@ -23,6 +23,122 @@ fn get_backend_url() -> String {
     format!("http://{}:{}", BACKEND_HOST, BACKEND_PORT)
 }
 
+#[derive(serde::Serialize)]
+struct TreeItem {
+    name: String,
+    path: String,
+    #[serde(rename = "type")]
+    item_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    children: Option<Vec<TreeItem>>,
+}
+
+fn tree_ignore(rel: &str) -> bool {
+    let s = rel.replace('\\', "/");
+    let parts: Vec<&str> = s.split('/').collect();
+    for p in parts {
+        let lower = p.to_lowercase();
+        if matches!(
+            lower.as_str(),
+            ".git" | "node_modules" | "__pycache__" | ".venv" | "venv" | ".env"
+                | "dist" | "build" | "chroma_data" | ".codec-agent"
+        ) {
+            return true;
+        }
+    }
+    false
+}
+
+fn build_file_tree(root: &std::path::Path, rel_prefix: &str) -> Vec<TreeItem> {
+    let mut items = Vec::new();
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return items;
+    };
+    let mut entries: Vec<_> = entries.filter_map(|e| e.ok()).collect();
+    entries.sort_by(|a, b| {
+        let a_file = a.path().is_file();
+        let b_file = b.path().is_file();
+        match (a_file, b_file) {
+            (true, false) => std::cmp::Ordering::Greater,
+            (false, true) => std::cmp::Ordering::Less,
+            _ => a.file_name().to_string_lossy().to_lowercase().cmp(&b.file_name().to_string_lossy().to_lowercase()),
+        }
+    });
+    for e in entries {
+        let name = e.file_name().to_string_lossy().to_string();
+        let rel = if rel_prefix.is_empty() {
+            name.clone()
+        } else {
+            format!("{}/{}", rel_prefix, name)
+        };
+        if tree_ignore(&rel) {
+            continue;
+        }
+        let path = e.path();
+        if path.is_dir() {
+            let children = build_file_tree(&path, &rel);
+            items.push(TreeItem {
+                name,
+                path: rel,
+                item_type: "folder".to_string(),
+                children: Some(children),
+            });
+        } else if path.is_file() {
+            items.push(TreeItem {
+                name,
+                path: rel,
+                item_type: "file".to_string(),
+                children: None,
+            });
+        }
+    }
+    items
+}
+
+#[tauri::command]
+fn get_file_tree(state: tauri::State<AppState>) -> serde_json::Value {
+    let root = state.project_path.lock().unwrap().clone();
+    if !root.exists() || !root.is_dir() {
+        return serde_json::json!({ "tree": [] });
+    }
+    serde_json::json!({ "tree": build_file_tree(&root, "") })
+}
+
+const EXT_TO_LANGUAGE: &[(&str, &str)] = &[
+    (".py", "python"), (".js", "javascript"), (".ts", "typescript"), (".jsx", "javascript"),
+    (".tsx", "typescript"), (".json", "json"), (".md", "markdown"), (".html", "html"),
+    (".css", "css"), (".scss", "scss"), (".yaml", "yaml"), (".yml", "yaml"),
+    (".sh", "shell"), (".bash", "shell"), (".sql", "sql"), (".xml", "xml"),
+    (".go", "go"), (".rs", "rust"), (".java", "java"), (".kt", "kotlin"),
+    (".cs", "csharp"), (".cpp", "cpp"), (".c", "c"), (".h", "c"),
+];
+
+#[tauri::command]
+fn get_file_content(rel_path: String, state: tauri::State<AppState>) -> Option<serde_json::Value> {
+    if rel_path.is_empty() {
+        return None;
+    }
+    let root = state.project_path.lock().unwrap().canonicalize().ok()?;
+    let full = root.join(rel_path.replace('/', std::path::MAIN_SEPARATOR_STR));
+    let full = full.canonicalize().ok()?;
+    if !full.starts_with(&root) {
+        return None;
+    }
+    let meta = std::fs::metadata(&full).ok()?;
+    if !meta.is_file() || meta.len() > 1024 * 1024 {
+        return None;
+    }
+    let content = std::fs::read_to_string(&full).ok()?;
+    let ext = full.extension().and_then(|e| e.to_str()).unwrap_or("");
+    let ext = format!(".{}", ext.to_lowercase());
+    let language = EXT_TO_LANGUAGE
+        .iter()
+        .find(|(e, _)| *e == ext)
+        .map(|(_, l)| *l)
+        .unwrap_or("plaintext");
+    Some(serde_json::json!({ "content": content, "language": language }))
+}
+
 #[tauri::command]
 fn get_project_path(state: tauri::State<AppState>) -> String {
     state.project_path.lock().unwrap().to_string_lossy().to_string()
@@ -106,7 +222,7 @@ fn set_theme(theme: String, app: tauri::AppHandle) -> bool {
 
 #[tauri::command]
 fn read_logs(log_type: String, state: tauri::State<AppState>, app: tauri::AppHandle) -> String {
-    let path = if log_type == "backend" {
+    let path = if log_type == "backend" || log_type == "agent" {
         state.project_path.lock().unwrap().join("logs").join("server.log")
     } else {
         PathBuf::from(get_log_path(app))
@@ -188,7 +304,7 @@ fn get_llm_provider(app: tauri::AppHandle) -> String {
     let v: Option<serde_json::Value> = cfg.and_then(|s| serde_json::from_str(&s).ok());
     v.as_ref()
         .and_then(|v| v.get("llmProvider").and_then(|p| p.as_str()).map(String::from))
-        .unwrap_or_else(|| "Ollama".to_string())
+        .unwrap_or_else(|| "Built-in".to_string())
 }
 
 #[tauri::command]
@@ -234,6 +350,18 @@ fn set_llm_config(cfg: serde_json::Value, app: tauri::AppHandle) -> bool {
     if let Some(k) = cfg.get("apiKey").and_then(|v| v.as_str()) {
         current["llmApiKey"] = serde_json::Value::String(k.to_string());
     }
+    if cfg.get("numCtx").is_some() {
+        current["numCtx"] = cfg["numCtx"].clone();
+    }
+    if cfg.get("temperature").is_some() {
+        current["temperature"] = cfg["temperature"].clone();
+    }
+    if cfg.get("repeatPenalty").is_some() {
+        current["repeatPenalty"] = cfg["repeatPenalty"].clone();
+    }
+    if cfg.get("numPredict").is_some() {
+        current["numPredict"] = cfg["numPredict"].clone();
+    }
     let _ = std::fs::write(cfg_path, serde_json::to_string_pretty(&current).unwrap_or_default());
     true
 }
@@ -245,7 +373,7 @@ fn get_llm_config(app: tauri::AppHandle) -> serde_json::Value {
     let v: Option<serde_json::Value> = cfg.and_then(|s| serde_json::from_str(&s).ok());
     let provider = v.as_ref()
         .and_then(|v| v.get("llmProvider").and_then(|p| p.as_str()).map(String::from))
-        .unwrap_or_else(|| "Ollama".to_string());
+        .unwrap_or_else(|| "Built-in".to_string());
     let model = v.as_ref()
         .and_then(|v| v.get("llmModel").and_then(|m| m.as_str()).map(String::from))
         .unwrap_or_default();
@@ -257,11 +385,37 @@ fn get_llm_config(app: tauri::AppHandle) -> serde_json::Value {
         .filter(|k| !k.is_empty())
         .map(|_| "***")
         .unwrap_or_default();
+    let to_str = |v: &serde_json::Value| -> String {
+        if v.is_null() { return String::new(); }
+        if let Some(n) = v.as_i64() { return n.to_string(); }
+        if let Some(n) = v.as_f64() { return n.to_string(); }
+        v.as_str().unwrap_or("").to_string()
+    };
+    let num_ctx = v.as_ref()
+        .and_then(|c| c.get("numCtx"))
+        .map(to_str)
+        .unwrap_or_default();
+    let temperature = v.as_ref()
+        .and_then(|c| c.get("temperature"))
+        .map(to_str)
+        .unwrap_or_default();
+    let repeat_penalty = v.as_ref()
+        .and_then(|c| c.get("repeatPenalty"))
+        .map(to_str)
+        .unwrap_or_default();
+    let num_predict = v.as_ref()
+        .and_then(|c| c.get("numPredict"))
+        .map(to_str)
+        .unwrap_or_default();
     serde_json::json!({
         "provider": provider,
         "model": model,
         "baseUrl": base_url,
-        "apiKey": api_key
+        "apiKey": api_key,
+        "numCtx": num_ctx,
+        "temperature": temperature,
+        "repeatPenalty": repeat_penalty,
+        "numPredict": num_predict
     })
 }
 
@@ -354,7 +508,7 @@ fn start_backend(app: tauri::AppHandle, state: tauri::State<AppState>, workspace
         envs.push(("BUILTIN_MODELS_DIR".into(), models_dir.to_string_lossy().to_string()));
         if let Ok(cfg) = std::fs::read_to_string(data_dir.join("app-settings.json")) {
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(&cfg) {
-                let provider = v.get("llmProvider").and_then(|p| p.as_str()).unwrap_or("Ollama");
+                let provider = v.get("llmProvider").and_then(|p| p.as_str()).unwrap_or("Built-in");
                 let provider_env = match provider {
                     "Built-in" => "builtin",
                     "LM Studio" => "lmstudio",
@@ -395,6 +549,38 @@ fn start_backend(app: tauri::AppHandle, state: tauri::State<AppState>, workspace
                     }
                     if let Some(k) = v.get("llmApiKey").and_then(|k| k.as_str()).filter(|s| !s.is_empty() && *s != "***") {
                         envs.push(("GOOGLE_API_KEY".into(), k.to_string()));
+                    }
+                }
+                if let Some(n) = v.get("numCtx") {
+                    let s = n.as_i64().map(|i| i.to_string())
+                        .or_else(|| n.as_str().map(String::from))
+                        .filter(|s| !s.is_empty());
+                    if let Some(s) = s {
+                        envs.push(("NUM_CTX".into(), s));
+                    }
+                }
+                if let Some(t) = v.get("temperature") {
+                    let s = t.as_f64().map(|f| f.to_string())
+                        .or_else(|| t.as_str().map(String::from))
+                        .filter(|s| !s.is_empty());
+                    if let Some(s) = s {
+                        envs.push(("TEMPERATURE".into(), s));
+                    }
+                }
+                if let Some(r) = v.get("repeatPenalty") {
+                    let s = r.as_f64().map(|f| f.to_string())
+                        .or_else(|| r.as_str().map(String::from))
+                        .filter(|s| !s.is_empty());
+                    if let Some(s) = s {
+                        envs.push(("REPEAT_PENALTY".into(), s));
+                    }
+                }
+                if let Some(p) = v.get("numPredict") {
+                    let s = p.as_i64().map(|i| i.to_string())
+                        .or_else(|| p.as_str().map(String::from))
+                        .filter(|s| !s.is_empty());
+                    if let Some(s) = s {
+                        envs.push(("NUM_PREDICT".into(), s));
                     }
                 }
             }
@@ -471,6 +657,8 @@ fn run_app() {
         .invoke_handler(tauri::generate_handler![
             get_backend_url,
             get_project_path,
+            get_file_tree,
+            get_file_content,
             set_project_path,
             get_log_path,
             get_log_dir,

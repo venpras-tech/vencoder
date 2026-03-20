@@ -9,8 +9,8 @@ ANTHROPIC_BASE_URL = os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com"
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 GOOGLE_BASE_URL = os.getenv("GOOGLE_BASE_URL", "https://generativelanguage.googleapis.com")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama")
-LLM_MODEL = os.getenv("LLM_MODEL", "gpt-oss:20b")
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "builtin")
+LLM_MODEL = os.getenv("LLM_MODEL", "")
 _data_home = os.getenv("APPDATA") or os.getenv("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
 BUILTIN_MODELS_DIR = Path(os.getenv("BUILTIN_MODELS_DIR", str(Path(_data_home) / "ai-codec" / "models")))
 PREFERRED_MODELS = ["gpt-oss:20b", "qwen3-vl:8b"]
@@ -48,8 +48,8 @@ _run_llm_in_thread = os.getenv("RUN_LLM_IN_THREAD", "").lower()
 if _run_llm_in_thread:
     RUN_LLM_IN_THREAD = _run_llm_in_thread in ("1", "true", "yes")
 else:
-    p = (LLM_PROVIDER or "ollama").lower()
+    p = (LLM_PROVIDER or "builtin").lower()
     RUN_LLM_IN_THREAD = p in ("builtin", "ollama", "lmstudio")
-MODEL_CODER = os.getenv("MODEL_CODER", os.getenv("LLM_MODEL", "gpt-oss:20b"))
+MODEL_CODER = os.getenv("MODEL_CODER", os.getenv("LLM_MODEL", ""))
 MODEL_PLANNER = os.getenv("MODEL_PLANNER", MODEL_CODER)
 MODEL_VL = os.getenv("MODEL_VL", "qwen3-vl:8b")
