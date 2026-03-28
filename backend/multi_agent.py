@@ -51,9 +51,11 @@ def classify_request(message: str, mode: str, available_models: list[str]) -> tu
     models_set = set(available_models)
     coder = MODEL_CODER if MODEL_CODER in models_set else None
     planner = MODEL_PLANNER if MODEL_PLANNER in models_set else None
+    if not available_models:
+        return (coder or planner or ""), "simple"
     fallback = next((m for m in PREFERRED_MODELS if m in models_set), available_models[0] if available_models else None)
     if not fallback:
-        return MODEL_CODER, "simple"
+        return (coder or planner or available_models[0] if available_models else ""), "simple"
     if mode in ("plan", "ask"):
         return (planner or coder or fallback) if mode == "plan" else (coder or planner or fallback), mode
     try:

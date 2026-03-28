@@ -63,6 +63,7 @@ app.add_middleware(
 )
 
 current_model = LLM_MODEL
+_active_provider = (LLM_PROVIDER or "builtin").lower()
 _agent_cache: dict = {}
 _tree_cache: dict = {}
 _tree_cache_ttl = int(os.getenv("FILE_TREE_CACHE_TTL", "60"))
@@ -73,7 +74,7 @@ _builtin_download_cancel_requested: set = set()
 def get_ollama_models():
     try:
         req = urllib.request.Request(f"{OLLAMA_BASE_URL}/api/tags")
-        with urllib.request.urlopen(req, timeout=5) as r:
+        with urllib.request.urlopen(req, timeout=2) as r:
             data = json.loads(r.read().decode())
         return [m.get("name", "") for m in data.get("models", []) if m.get("name")]
     except Exception as e:
@@ -86,7 +87,7 @@ def get_lmstudio_models():
         base = (LM_STUDIO_BASE_URL or "http://localhost:1234").rstrip("/")
         url = f"{base}/v1/models" if not base.endswith("/v1") else f"{base}/models"
         req = urllib.request.Request(url)
-        with urllib.request.urlopen(req, timeout=5) as r:
+        with urllib.request.urlopen(req, timeout=2) as r:
             data = json.loads(r.read().decode())
         return [m.get("id", "") for m in data.get("data", []) if m.get("id")]
     except Exception as e:
@@ -100,7 +101,7 @@ GOOGLE_MODELS = ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-1.0-pro"]
 
 
 def get_provider() -> str:
-    return (LLM_PROVIDER or "builtin").lower()
+    return _active_provider
 
 
 def get_provider_display_name() -> str:
@@ -125,24 +126,45 @@ def get_available_models() -> list[str]:
 
 
 def _ensure_current_model_valid():
-    global current_model
+    global current_model, _active_provider
     models = get_available_models()
-    if models and current_model not in models:
+    if not models:
+        builtin_models = get_builtin_models()
+        if builtin_models:
+            _active_provider = "builtin"
+            current_model = builtin_models[0]
+            log.warning("no ollama/lmstudio models, falling back to built-in: %s", current_model)
+        else:
+            log.warning("no models available. Install models for ollama or download a GGUF model.")
+        return
+    if current_model not in models:
         for m in PREFERRED_MODELS:
             if m in models:
                 current_model = m
                 break
         else:
             current_model = models[0]
-        log.warning("model '%s' not found, using '%s'", LLM_MODEL, current_model)
+        log.warning("model '%s' not found, using '%s'", LLM_MODEL or "(none)", current_model)
 
 
-import threading
-threading.Thread(target=_ensure_current_model_valid, daemon=True).start()
+_provider_ready = threading.Event()
+_initialized = False
+
+
+def _run_initialization():
+    global _initialized
+    _ensure_current_model_valid()
+    _initialized = True
+    _provider_ready.set()
+
+
+threading.Thread(target=_run_initialization, daemon=True).start()
 
 
 def get_agent(mode: str = "agent", model: Optional[str] = None):
     from agent import build_agent
+    if not _initialized:
+        _provider_ready.wait(timeout=10)
     m = model or current_model
     key = (m, mode)
     if key not in _agent_cache:
@@ -203,6 +225,8 @@ def model_exists(name: str) -> bool:
 
 
 def ensure_model_exists(model: str) -> None:
+    if not _initialized:
+        _provider_ready.wait(timeout=10)
     models = get_available_models()
     if model in models:
         return
@@ -341,7 +365,8 @@ async def stream_agent_events_with_history(
     plan_prefix = ""
     _conv = (message or "").strip().lower()
     _greetings = ("hi", "hello", "hey", "hi there", "hello there", "thanks", "thank you", "bye", "ok", "okay", "yes", "no")
-    if len(_conv) <= 50 and (_conv in _greetings or _conv.rstrip("!?.") in _greetings):
+    _is_greeting = any(_conv.startswith(g) for g in _greetings)
+    if _is_greeting:
         try:
             from langchain_core.messages import HumanMessage
             from llm_builder import build_llm
@@ -350,12 +375,25 @@ async def stream_agent_events_with_history(
                 llm.invoke,
                 [HumanMessage(content=f"User said: {message}\n\nReply briefly and naturally as a friendly coding assistant. One short sentence.")],
             )
-            content = (getattr(reply, "content", "") or str(reply)).strip()
+            raw = getattr(reply, "content", None)
+            if raw is None:
+                raw = str(reply) if reply else ""
+            if isinstance(raw, list):
+                parts = []
+                for block in raw:
+                    if isinstance(block, dict):
+                        t = block.get("text") or block.get("content")
+                        if t:
+                            parts.append(str(t))
+                    elif isinstance(block, str):
+                        parts.append(block)
+                content = "".join(parts).strip()
+            else:
+                content = str(raw).strip()
             if content:
                 add_message(conv_id, "assistant", content)
                 yield json.dumps({"type": "model", "model": selected_model}) + "\n"
-                for ch in content:
-                    yield json.dumps({"type": "token", "content": ch}) + "\n"
+                yield json.dumps({"type": "token", "content": content}) + "\n"
                 if is_new:
                     try:
                         from title_gen import generate_chat_title
@@ -383,8 +421,7 @@ async def stream_agent_events_with_history(
                 add_message(conv_id, "assistant", result)
                 yield json.dumps({"type": "model", "model": selected_model}) + "\n"
                 yield json.dumps({"type": "phase", "phase": "streaming"}) + "\n"
-                for ch in result:
-                    yield json.dumps({"type": "token", "content": ch}) + "\n"
+                yield json.dumps({"type": "token", "content": result}) + "\n"
                 if is_new:
                     try:
                         from title_gen import generate_chat_title
@@ -985,7 +1022,7 @@ def files_content(path: str = ""):
         raise HTTPException(status_code=400, detail="path required")
     try:
         content, ext = read_file_content(path)
-        return JSONResponse(content={"content": content, "language": _ext_to_language(ext)})
+        return JSONResponse(content={"content": content, "language": _ext_to_language(ext or "")})
     except PermissionError:
         raise HTTPException(status_code=403, detail="Path outside workspace")
     except FileNotFoundError as e:

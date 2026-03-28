@@ -104,7 +104,7 @@ let contextState = {
 let currentPage = 'home';
 let messageHistory = [];
 let historyIndex = -1;
-let currentModelName = 'gpt-oss:20b';
+let currentModelName = '';
 let currentProvider = 'Ollama';
 let currentMode = 'agent';
 let currentChatAbortController = null;
@@ -371,7 +371,7 @@ function setModelStatus(connected) {
 }
 
 function setModelName(name, provider) {
-  currentModelName = name || 'gpt-oss:20b';
+  currentModelName = name || '';
   currentProvider = provider || 'Ollama';
   const sideNavModel = document.getElementById('side-nav-model');
   if (sideNavModel) sideNavModel.textContent = `Model: ${currentModelName} · ${currentProvider}`;
@@ -1047,9 +1047,21 @@ form.addEventListener('submit', async (e) => {
   chatInputBox?.classList.add('processing');
   clearActivity();
 
-  let bubble, steps, blocks, outWrap;
+  await ensureBackendUrl();
+  if (!baseUrl) {
+    addActivity('Backend not configured. Please restart the app.', 'error');
+    submit.disabled = false;
+    input.disabled = false;
+    chatInputBox?.classList.remove('processing');
+    return;
+  }
+  console.log('[Chat] Sending to:', baseUrl + '/chat');
+
+  let bubble, steps, blocks, outWrap, modelEl, statusEl, metaEl;
   try {
+    console.log('[Chat] Getting assistant bubble...');
     const out = getOrCreateAssistantBubble();
+    console.log('[Chat] Got bubble:', out);
     if (!out) {
       submit.disabled = false;
       input.disabled = false;
@@ -1060,9 +1072,9 @@ form.addEventListener('submit', async (e) => {
     steps = out.steps || null;
     blocks = out.blocks || null;
     outWrap = out.wrap;
-    const modelEl = out.modelEl;
-    const statusEl = out.statusEl;
-    const metaEl = out.metaEl;
+    modelEl = out.modelEl;
+    statusEl = out.statusEl;
+    metaEl = out.metaEl;
   } catch (err) {
     console.error(err);
     submit.disabled = false;
@@ -1091,7 +1103,9 @@ form.addEventListener('submit', async (e) => {
   if (btnCancel) btnCancel.classList.remove('btn-cancel-hidden');
 
   try {
-    const r = await fetch(baseUrl + '/chat', {
+    console.log('[Chat] Making fetch request to:', baseUrl + '/chat');
+    let r;
+    r = await fetch(baseUrl + '/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1103,6 +1117,7 @@ form.addEventListener('submit', async (e) => {
       }),
       signal: currentChatAbortController.signal
     });
+    console.log('[Chat] Response status:', r.status, r.statusText);
     if (!r.ok) {
       let msg = r.statusText;
       try {
@@ -1263,7 +1278,14 @@ form.addEventListener('submit', async (e) => {
   }
 
   bubble.classList.remove('streaming');
-  if (statusEl) statusEl.hidden = true;
+  if (outWrap) {
+    const allStatus = outWrap.querySelectorAll('.msg-status');
+    allStatus.forEach(el => el.hidden = true);
+  }
+  if (messagesEl) {
+    const allStatus = messagesEl.querySelectorAll('.msg-status');
+    allStatus.forEach(el => el.hidden = true);
+  }
   const finalContent = bubble.textContent || '';
   if (finalContent) {
     bubble.innerHTML = renderMarkdown(finalContent);
@@ -2521,10 +2543,17 @@ function showConnectingBanner(connecting) {
   }
 }
 
-function showBackendFailedBanner() {
+async function showBackendFailedBanner() {
   if (!connectingBanner) return;
   connectingBanner.hidden = false;
-  if (connectingText) connectingText.textContent = 'Backend could not start.';
+  let errMsg = 'Backend could not start.';
+  if (window.electronAPI?.getBackendError) {
+    try {
+      const err = await window.electronAPI.getBackendError();
+      if (err) errMsg = err;
+    } catch (_) {}
+  }
+  if (connectingText) connectingText.textContent = errMsg;
   if (connectingRetry) connectingRetry.hidden = false;
 }
 

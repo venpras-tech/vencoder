@@ -174,11 +174,23 @@ async def stream_events(
                     yield json.dumps({"type": "shell_start", "command": cmd}) + "\n"
             elif kind == "on_chat_model_stream":
                 chunk = event.get("data", {}).get("chunk", {})
-                if hasattr(chunk, "content") and chunk.content:
+                content = getattr(chunk, "content", None)
+                if content:
+                    text = content
+                    if isinstance(content, list):
+                        parts = []
+                        for block in content:
+                            if isinstance(block, dict):
+                                t = block.get("text") or block.get("content")
+                                if t:
+                                    parts.append(str(t))
+                            elif isinstance(block, str):
+                                parts.append(block)
+                        text = "".join(parts)
                     if not stream_started:
                         stream_started = True
                         yield json.dumps({"type": "phase", "phase": "streaming"}) + "\n"
-                    yield json.dumps({"type": "token", "content": chunk.content}) + "\n"
+                    yield json.dumps({"type": "token", "content": text}) + "\n"
                     token_count += 1
                     if token_count % 64 == 0:
                         yield _emit_log("DEBUG", f"Generating… {token_count} tokens", model, {"n_tokens": token_count}) + "\n"

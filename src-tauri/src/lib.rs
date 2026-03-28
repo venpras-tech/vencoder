@@ -16,11 +16,17 @@ const BACKEND_HOST: &str = "127.0.0.1";
 struct AppState {
     project_path: Mutex<PathBuf>,
     backend_child: Mutex<Option<std::process::Child>>,
+    backend_error: Mutex<Option<String>>,
 }
 
 #[tauri::command]
 fn get_backend_url() -> String {
     format!("http://{}:{}", BACKEND_HOST, BACKEND_PORT)
+}
+
+#[tauri::command]
+fn get_backend_error(state: tauri::State<AppState>) -> Option<String> {
+    state.backend_error.lock().unwrap().clone()
 }
 
 #[derive(serde::Serialize)]
@@ -449,6 +455,10 @@ fn get_backend_dir(app: &tauri::AppHandle) -> PathBuf {
     if backend.exists() {
         return backend;
     }
+    let dev_backend = cwd.parent().map(|p| p.join("backend")).unwrap_or_default();
+    if dev_backend.exists() {
+        return dev_backend;
+    }
     if let Ok(exe) = std::env::current_exe() {
         let mut dir = exe.parent().map(PathBuf::from).unwrap_or_default();
         while dir.pop() {
@@ -459,6 +469,10 @@ fn get_backend_dir(app: &tauri::AppHandle) -> PathBuf {
             let backend_up = dir.join("_up_").join("backend");
             if backend_up.exists() {
                 return backend_up;
+            }
+            let dev_backend = dir.join("..").join("backend").canonicalize().unwrap_or_default();
+            if dev_backend.exists() {
+                return dev_backend;
             }
         }
     }
@@ -488,9 +502,12 @@ fn get_bundled_python(app: &tauri::AppHandle) -> Option<PathBuf> {
 fn start_backend(app: tauri::AppHandle, state: tauri::State<AppState>, workspace: PathBuf) {
     let backend_dir = get_backend_dir(&app);
     if !backend_dir.exists() {
-        eprintln!("Backend dir not found: {:?}", backend_dir);
+        let err = format!("Backend dir not found: {:?}", backend_dir);
+        eprintln!("{}", err);
+        *state.backend_error.lock().unwrap() = Some(err);
         return;
     }
+    *state.backend_error.lock().unwrap() = None;
     let python = get_bundled_python(&app).unwrap_or_else(|| {
         if std::env::consts::OS == "windows" {
             PathBuf::from("python")
@@ -603,8 +620,13 @@ fn start_backend(app: tauri::AppHandle, state: tauri::State<AppState>, workspace
     match cmd.spawn() {
         Ok(child) => {
             let _ = state.backend_child.lock().unwrap().insert(child);
+            *state.backend_error.lock().unwrap() = None;
         }
-        Err(e) => eprintln!("Failed to start backend: {}", e),
+        Err(e) => {
+            let err = format!("Failed to start backend: {}", e);
+            eprintln!("{}", err);
+            *state.backend_error.lock().unwrap() = Some(err);
+        }
     }
 }
 
@@ -637,6 +659,7 @@ fn run_app() {
         .manage(AppState {
             project_path: Mutex::new(PathBuf::from(".")),
             backend_child: Mutex::new(None),
+            backend_error: Mutex::new(None),
         })
         .setup(|app| {
             let state = app.state::<AppState>();
@@ -656,6 +679,7 @@ fn run_app() {
         })
         .invoke_handler(tauri::generate_handler![
             get_backend_url,
+            get_backend_error,
             get_project_path,
             get_file_tree,
             get_file_content,

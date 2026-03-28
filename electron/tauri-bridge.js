@@ -5,6 +5,7 @@
   if (!invoke) return;
   window.electronAPI = {
     getBackendUrl: () => invoke('get_backend_url'),
+    getBackendError: () => invoke('get_backend_error'),
     getProjectPath: () => invoke('get_project_path'),
     getFileTree: () => invoke('get_file_tree'),
     getFileContent: (relPath) => invoke('get_file_content', { relPath }),

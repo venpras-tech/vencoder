@@ -5,7 +5,7 @@ from typing import Any, Optional
 
 from langchain_core.messages import HumanMessage
 
-from config import PREFERRED_MODELS
+from config import OLLAMA_BASE_URL, PREFERRED_MODELS
 from llm_builder import build_llm
 from multi_agent import MODEL_VL
 from visual_context import build_visual_instruction, build_visual_message_content

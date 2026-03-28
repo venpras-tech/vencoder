@@ -7,7 +7,7 @@ from config import (
     BUILTIN_MODELS_DIR,
     GOOGLE_API_KEY,
     GOOGLE_BASE_URL,
-    LLM_PROVIDER,
+    LLM_PROVIDER as _LLM_PROVIDER_DEFAULT,
     LM_STUDIO_BASE_URL,
     NUM_CTX,
     NUM_PREDICT,
@@ -18,6 +18,15 @@ from config import (
     REPEAT_PENALTY,
     TEMPERATURE,
 )
+
+
+def _get_provider() -> str:
+    import config as _cfg
+    try:
+        import server as _server
+        return getattr(_server, '_active_provider', None) or (getattr(_cfg, 'LLM_PROVIDER', None) or _LLM_PROVIDER_DEFAULT or "builtin").lower()
+    except Exception:
+        return (getattr(_cfg, 'LLM_PROVIDER', None) or _LLM_PROVIDER_DEFAULT or "builtin").lower()
 
 
 def get_builtin_models() -> list[str]:
@@ -51,7 +60,7 @@ def build_llm(
     num_ctx: Optional[int] = None,
     **kwargs: Any,
 ):
-    provider = (LLM_PROVIDER or "builtin").lower()
+    provider = _get_provider()
     if provider == "builtin":
         try:
             from langchain_community.chat_models.llamacpp import ChatLlamaCpp
