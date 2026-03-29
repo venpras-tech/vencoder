@@ -623,6 +623,8 @@
             modelBuiltinList.querySelectorAll('.model-builtin-use').forEach(function(btn) {
               btn.addEventListener('click', async function(e) {
                 e.stopImmediatePropagation();
+                var cfgBefore = await getConfig();
+                var prevSavedProvider = cfgBefore.provider || 'Built-in';
                 var stem = btn.dataset.stem;
                 if (stem === currentModel) {
                   currentModel = '';
@@ -633,9 +635,19 @@
                 var ok = await setConfig({ provider: currentProvider, model: currentModel });
                 if (ok) {
                   try {
-                    await patchModel(currentModel);
-                    updateInlineLabel(currentModel, currentProvider);
-                    showModelToast(currentModel ? 'Model set to ' + currentModel : 'Model unloaded', 'success');
+                    var needRestart = prevSavedProvider !== 'Built-in' || !currentModel;
+                    if (needRestart) {
+                      backendUrl = '';
+                      restartBackend();
+                      setTimeout(function() {
+                        updateInlineLabel(currentModel, currentProvider);
+                      }, 2000);
+                      showModelToast(currentModel ? 'Model set to ' + currentModel : 'Model unloaded', 'success');
+                    } else {
+                      await patchModel(currentModel);
+                      updateInlineLabel(currentModel, currentProvider);
+                      showModelToast(currentModel ? 'Model set to ' + currentModel : 'Model unloaded', 'success');
+                    }
                   } catch (err) {
                     modelsPrompt.textContent = 'Failed to switch: ' + (err.message || '');
                     modelsPrompt.style.color = '#dc2626';
@@ -697,7 +709,7 @@
       const newBaseUrl = inputBaseUrl.value.trim();
       const newApiKey = inputApiKey.value;
       const cfg = await getConfig();
-      const providerChanged = newProvider !== (cfg.provider || 'Ollama');
+      const providerChanged = newProvider !== (cfg.provider || 'Built-in');
       const keysChanged = (newBaseUrl !== (cfg.baseUrl || '')) || (PROVIDER_NEEDS_KEY.includes(newProvider) && newApiKey && newApiKey !== '***');
       const newNumCtx = (PROVIDER_LOCAL_PARAMS.includes(newProvider) && inputNumCtx) ? (inputNumCtx.value.trim() === '' ? '' : parseInt(inputNumCtx.value, 10)) : undefined;
       const newRepeatPenalty = (PROVIDER_LOCAL_PARAMS.includes(newProvider) && inputRepeatPenalty) ? (inputRepeatPenalty.value.trim() === '' ? '' : parseFloat(inputRepeatPenalty.value)) : undefined;
@@ -720,6 +732,8 @@
       if (!ok) return;
 
       if (providerChanged || keysChanged || localParamsChanged) {
+        restartBackend();
+      } else if (newProvider === 'Built-in' && newModel) {
         restartBackend();
         setTimeout(() => {
           updateInlineLabel(newModel, newProvider);

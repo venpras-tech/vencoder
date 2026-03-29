@@ -89,6 +89,17 @@ def build_llm(
                 verbose=False,
                 **kwargs,
             )
+        except ImportError as e:
+            err = str(e).lower()
+            if "llama" in err:
+                raise ImportError(
+                    "Built-in mode needs llama-cpp-python in the Python that runs the backend (not necessarily your global install). "
+                    "With the bundled Windows runtime: npm run prepare-python "
+                    "or <python-runtime>/python.exe -m pip install -r backend/requirements-builtin.txt. "
+                    "Otherwise: pip install -r backend/requirements-builtin.txt for that interpreter. "
+                    "On Windows, compiling llama-cpp-python may require Visual Studio Build Tools."
+                ) from e
+            raise
         except Exception as e:
             err = str(e)
             if "Could not load" in err or "Failed to load" in err:

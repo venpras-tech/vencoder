@@ -113,6 +113,19 @@ function installPipAndDeps(runtimeDir) {
         cwd: runtimeDir,
         stdio: 'inherit'
       });
+      const reqBuiltinPath = path.join(BACKEND_DIR, 'requirements-builtin.txt');
+      if (fs.existsSync(reqBuiltinPath)) {
+        console.log('Installing build tools for llama-cpp-python (scikit-build, cmake, ninja)...');
+        execSync(`"${pyExe}" -m pip install scikit-build-core cmake ninja`, {
+          cwd: runtimeDir,
+          stdio: 'inherit'
+        });
+        console.log('Installing local / built-in LLM deps (llama-cpp-python)...');
+        execSync(`"${pyExe}" -m pip install -r "${reqBuiltinPath}"`, {
+          cwd: runtimeDir,
+          stdio: 'inherit'
+        });
+      }
     })
     .catch((err) => {
       console.error('installPipAndDeps failed:', err.message);
