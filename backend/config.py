@@ -9,10 +9,11 @@ ANTHROPIC_BASE_URL = os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com"
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 GOOGLE_BASE_URL = os.getenv("GOOGLE_BASE_URL", "https://generativelanguage.googleapis.com")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
+HUGGINGFACE_BASE_URL = os.getenv("HUGGINGFACE_BASE_URL", "https://huggingface.co").rstrip("/")
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama")
 LLM_MODEL = os.getenv("LLM_MODEL", "")
 _data_home = os.getenv("APPDATA") or os.getenv("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
-BUILTIN_MODELS_DIR = Path(os.getenv("BUILTIN_MODELS_DIR", str(Path(_data_home) / "ai-codec" / "models")))
+BUILTIN_MODELS_DIR = Path(os.getenv("BUILTIN_MODELS_DIR", str(Path(_data_home) / "ai-dev" / "models")))
 PREFERRED_MODELS = ["codellama", "deepseek-coder", "qwen2.5-coder", "llama3.2", "mistral", "phi", "qwen2.5", "llama3.1"]
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
 CHROMA_PERSIST_DIR = Path(os.getenv("CHROMA_PERSIST_DIR", "./chroma_data"))
@@ -36,7 +37,7 @@ if _cache_dir:
     CACHE_DIR = Path(_cache_dir).resolve()
 else:
     _cache_home = os.getenv("APPDATA") or os.getenv("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
-    CACHE_DIR = Path(_cache_home) / "ai-codec" / "cache"
+    CACHE_DIR = Path(_cache_home) / "ai-dev" / "cache"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 VECTOR_CACHE_TTL = int(os.getenv("VECTOR_CACHE_TTL", "300"))

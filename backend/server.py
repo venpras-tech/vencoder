@@ -4,12 +4,12 @@ import os
 import threading
 import urllib.request
 from time import time
-from typing import AsyncGenerator, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from fastapi import FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 from chat_db import (
@@ -53,7 +53,7 @@ except Exception:
         h = logging.StreamHandler()
         h.setFormatter(logging.Formatter("%(message)s"))
         log.addHandler(h)
-app = FastAPI(title="AI Codec API")
+app = FastAPI(title="AI Dev API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -847,7 +847,12 @@ def set_model(req: ModelUpdate):
 
 @app.get("/builtin/system-info")
 def builtin_system_info():
-    return {"ram_gb": get_system_ram_gb(), "tier": get_system_tier()}
+    ram = get_system_ram_gb()
+    return {
+        "ram_gb": ram,
+        "tier": get_system_tier(),
+        "comfort_ram_gb": round(ram * 0.5, 2),
+    }
 
 
 @app.get("/builtin/suggested-models")
@@ -858,6 +863,68 @@ def builtin_suggested_models():
     except Exception as e:
         log.warning("builtin suggested-models failed: %s", e)
         return {"suggested": [], "llama_cpp_available": False}
+
+
+@app.get("/builtin/huggingface-base")
+def builtin_huggingface_base():
+    from config import HUGGINGFACE_BASE_URL
+    return {"base_url": HUGGINGFACE_BASE_URL}
+
+
+@app.get("/builtin/hf-search")
+def builtin_hf_search(q: str = "", limit: int = 25):
+    from builtin_models import hf_search_models
+    try:
+        lim = max(1, min(int(limit), 50))
+        return {"models": hf_search_models(q, lim)}
+    except Exception as e:
+        log.warning("builtin hf-search failed: %s", e)
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.get("/builtin/hf-latest")
+def builtin_hf_latest(limit: int = 20):
+    from builtin_models import hf_latest_gguf_models
+    try:
+        lim = max(1, min(int(limit), 40))
+        return {"models": hf_latest_gguf_models(lim)}
+    except Exception as e:
+        log.warning("builtin hf-latest failed: %s", e)
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+class HfReposStatusRequest(BaseModel):
+    repo_ids: list[str]
+
+
+@app.post("/builtin/hf-repos-status")
+def builtin_hf_repos_status(req: HfReposStatusRequest):
+    from builtin_models import hf_repos_install_status
+    try:
+        ids = [x.strip() for x in (req.repo_ids or []) if x and "/" in x.strip()][:40]
+        return {"status": hf_repos_install_status(ids)}
+    except Exception as e:
+        log.warning("builtin hf-repos-status failed: %s", e)
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.get("/builtin/hf-model-files")
+def builtin_hf_model_files(repo_id: str):
+    rid = (repo_id or "").strip()
+    if not rid or "/" not in rid:
+        raise HTTPException(status_code=400, detail="repo_id required (org/name)")
+    from builtin_models import hf_model_gguf_files, hf_repo_card_summary
+    try:
+        files = hf_model_gguf_files(rid)
+        return {
+            "repo_id": rid,
+            "files": files,
+            "ram_gb": get_system_ram_gb(),
+            "repo": hf_repo_card_summary(rid),
+        }
+    except Exception as e:
+        log.warning("builtin hf-model-files failed: %s", e)
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 class BuiltinDownloadRequest(BaseModel):
@@ -1006,7 +1073,7 @@ def create_project_template(req: CreateProjectTemplateRequest):
     content = req.content or get_template(req.name)
     if not content:
         raise HTTPException(status_code=400, detail=f"Unknown template: {req.name}")
-    dir_path = WORKSPACE_ROOT / ".codec-agent"
+    dir_path = WORKSPACE_ROOT / ".ai-dev"
     dir_path.mkdir(parents=True, exist_ok=True)
     file_path = dir_path / "project.md"
     try:
@@ -1097,6 +1164,105 @@ def run_server(host: str = "127.0.0.1", port: int = 8765):
     import uvicorn
     log.info("starting server %s:%s", host, port)
     uvicorn.run(app, host=host, port=port)
+
+
+@app.get("/mcp/status")
+def mcp_status():
+    from mcp_external_tools import get_servers_config, discover_external_servers_sync
+    return {
+        "workspaceRoot": str(WORKSPACE_ROOT),
+        "servers": get_servers_config(),
+        "discovery": discover_external_servers_sync(),
+    }
+
+
+@app.get("/mcp/client-config")
+def mcp_client_config():
+    wr = str(WORKSPACE_ROOT)
+    return {
+        "workspaceRoot": wr,
+        "note": "Configure external MCP servers using the settings panel.",
+    }
+
+
+class ExternalMcpBody(BaseModel):
+    servers: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+@app.get("/mcp/external")
+def mcp_external_get():
+    from mcp_external_tools import get_servers_config, discover_external_servers_sync
+
+    return {
+        "servers": get_servers_config(),
+        "discovery": discover_external_servers_sync(),
+    }
+
+
+@app.post("/mcp/external")
+def mcp_external_set(body: ExternalMcpBody):
+    global _agent_cache
+    from mcp_external_tools import set_mcp_settings, invalidate_external_mcp_cache
+
+    set_mcp_settings(body.servers)
+    invalidate_external_mcp_cache()
+    _agent_cache.clear()
+    return {"ok": True, "count": len(body.servers)}
+
+
+class SettingsUpdateBody(BaseModel):
+    settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+@app.get("/settings")
+def get_settings():
+    from settings_db import get_all_settings
+    return get_all_settings()
+
+
+@app.post("/settings")
+def update_settings(body: SettingsUpdateBody):
+    from settings_db import set_setting
+    for key, value in body.settings.items():
+        set_setting(key, value)
+    return {"ok": True, "count": len(body.settings)}
+
+
+@app.get("/settings/{key}")
+def get_setting(key: str):
+    from settings_db import get_setting
+    return {"key": key, "value": get_setting(key)}
+
+
+@app.put("/settings/{key}")
+def put_setting(key: str, value: Any):
+    from settings_db import set_setting
+    set_setting(key, value)
+    return {"ok": True}
+
+
+@app.delete("/settings/{key}")
+def delete_setting(key: str):
+    from settings_db import delete_setting
+    deleted = delete_setting(key)
+    return {"ok": True, "deleted": deleted}
+
+
+@app.get("/settings/llm")
+def get_llm_settings():
+    from settings_db import get_setting
+    return {
+        "value": {
+            "llmProvider": get_setting("llmProvider", "Ollama"),
+            "llmModel": get_setting("llmModel", ""),
+            "llmBaseUrl": get_setting("llmBaseUrl", ""),
+            "llmApiKey": get_setting("llmApiKey", ""),
+            "numCtx": get_setting("numCtx", 8192),
+            "temperature": get_setting("temperature", 0.1),
+            "repeatPenalty": get_setting("repeatPenalty", 1.1),
+            "numPredict": get_setting("numPredict", 0),
+        }
+    }
 
 
 if __name__ == "__main__":

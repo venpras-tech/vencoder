@@ -20,7 +20,7 @@ def scrape_url(url: str, max_chars: int = 25000) -> str:
     if not url.startswith(("http://", "https://")):
         return "Error: URL must start with http:// or https://"
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (compatible; AICodec/1.0)"})
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (compatible; AIDev/1.0)"})
         with urllib.request.urlopen(req, timeout=15) as r:
             html = r.read().decode("utf-8", errors="replace")
         text = _extract_text_from_html(html)

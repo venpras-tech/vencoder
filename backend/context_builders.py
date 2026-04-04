@@ -5,7 +5,7 @@ from typing import Any, Optional
 from config import WORKSPACE_ROOT
 from file_tree import read_file_content, get_file_structure_summary, get_project_context
 
-_PROJECT_FILE_PATHS = (".codec-agent/project.md", ".codec-agent/project.txt")
+_PROJECT_FILE_PATHS = (".ai-dev/project.md", ".ai-dev/project.txt")
 
 
 def build_project_file_context() -> str:
@@ -93,7 +93,7 @@ def build_docs_context(urls: list[str]) -> str:
         if not url.startswith(("http://", "https://")):
             continue
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (compatible; AICodec/1.0)"})
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (compatible; AIDev/1.0)"})
             with urllib.request.urlopen(req, timeout=10) as r:
                 html = r.read().decode("utf-8", errors="replace")
             text = _extract_text_from_html(html)

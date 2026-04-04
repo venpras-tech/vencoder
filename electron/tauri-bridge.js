@@ -38,6 +38,8 @@
     getLLMConfig: () => invoke('get_llm_config'),
     setLLMProvider: (p) => invoke('set_llm_provider', { provider: p }),
     setLLMConfig: (cfg) => invoke('set_llm_config', { cfg }),
-    restartBackend: () => invoke('restart_backend')
+    restartBackend: () => invoke('restart_backend'),
+    getMcpSettings: () => Promise.resolve({ enabled: false, port: 8766, externalMcpServers: [] }),
+    setMcpSettings: () => Promise.resolve(false)
   };
 })();

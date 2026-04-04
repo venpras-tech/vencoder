@@ -2129,7 +2129,7 @@ if (btnProjectTemplate && projectTemplateDropdown) {
           body: JSON.stringify({ name: template })
         });
         if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
-        addActivity('Created .codec-agent/project.md from ' + template + ' template', 'status');
+        addActivity('Created .ai-dev/project.md from ' + template + ' template', 'status');
         loadProjectTree(true);
       } catch (err) {
         addActivity('Template failed: ' + err.message, 'error');

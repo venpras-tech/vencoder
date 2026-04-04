@@ -1,13 +1,13 @@
 [package]
-name = "ai-codec"
+name = "ai-dev"
 version = "1.0.0"
-description = "AI codec with Ollama, semantic index, and file tools"
-authors = ["AI Codec"]
+description = "AI coding assistant with Ollama, semantic index, and file tools"
+authors = ["AI Dev"]
 edition = "2021"
 rust-version = "1.70"
 
 [lib]
-name = "ai_codec_lib"
+name = "ai_dev_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [build-dependencies]

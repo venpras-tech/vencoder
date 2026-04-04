@@ -47,7 +47,7 @@ fn tree_ignore(rel: &str) -> bool {
         if matches!(
             lower.as_str(),
             ".git" | "node_modules" | "__pycache__" | ".venv" | "venv" | ".env"
-                | "dist" | "build" | "chroma_data" | ".codec-agent"
+                | "dist" | "build" | "chroma_data" | ".ai-dev"
         ) {
             return true;
         }
@@ -520,7 +520,7 @@ fn start_backend(app: tauri::AppHandle, state: tauri::State<AppState>, workspace
         ("WORKSPACE_ROOT".into(), workspace.to_string_lossy().to_string()),
     ];
     if let Ok(data_dir) = app.path().app_data_dir() {
-        let models_dir = data_dir.parent().map(|p| p.join("ai-codec").join("models")).unwrap_or_else(|| data_dir.join("models"));
+        let models_dir = data_dir.parent().map(|p| p.join("ai-dev").join("models")).unwrap_or_else(|| data_dir.join("models"));
         let _ = std::fs::create_dir_all(&models_dir);
         envs.push(("BUILTIN_MODELS_DIR".into(), models_dir.to_string_lossy().to_string()));
         if let Ok(cfg) = std::fs::read_to_string(data_dir.join("app-settings.json")) {

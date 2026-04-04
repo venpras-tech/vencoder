@@ -110,7 +110,7 @@ class ChatApp(App):
         )
         self.query_one("#chat", RichLog).write(
             Panel(
-                "[bold]AI Codec[/bold] - coding agent (Ollama)\n\n"
+                "[bold]AI Dev[/bold] - coding agent (Ollama)\n\n"
                 "[dim]Type a message or /help for commands[/dim]",
                 border_style="green",
             )

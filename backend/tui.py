@@ -39,7 +39,7 @@ def _get_prompt_session():
         try:
             from prompt_toolkit import PromptSession
             from prompt_toolkit.history import FileHistory
-            _history_path = Path.home() / ".codec-agent" / "history"
+            _history_path = Path.home() / ".ai-dev" / "history"
             _history_path.parent.mkdir(parents=True, exist_ok=True)
             _prompt_session = PromptSession(
                 history=FileHistory(str(_history_path)),
@@ -128,14 +128,14 @@ def print_welcome(mode: str):
     if _try_import():
         from rich.panel import Panel
         _console.print(Panel(
-            "[bold]AI Codec[/bold] - coding agent with Ollama\n\n"
+            "[bold]AI Dev[/bold] - coding agent with Ollama\n\n"
             "[dim]Commands: /quit /continue /session /help[/dim]\n"
             "[dim]Mode: %s[/dim]" % mode,
             border_style="green",
         ))
         _console.print()
     else:
-        print("AI Codec - type your message and press Enter. Ctrl+C to exit, /quit to exit.")
+        print("AI Dev - type your message and press Enter. Ctrl+C to exit, /quit to exit.")
         print()
 
 

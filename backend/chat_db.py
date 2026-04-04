@@ -5,7 +5,7 @@ from typing import List, Optional
 
 from config import WORKSPACE_ROOT
 
-CODEC_DIR = ".codec-agent"
+CODEC_DIR = ".ai-dev"
 DB_NAME = "chat.db"
 
 

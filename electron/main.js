@@ -18,7 +18,7 @@ function getLogPath() {
       } catch (_) {}
     }
     if (app.isPackaged) {
-      const dir = path.join(process.env.APPDATA || process.env.LOCALAPPDATA || process.cwd(), 'ai-codec');
+      const dir = path.join(process.env.APPDATA || process.env.LOCALAPPDATA || process.cwd(), 'ai-dev');
       try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
       return path.join(dir, 'app.log');
     }
@@ -115,6 +115,33 @@ function setAppSettings(settings) {
   } catch (_) {}
 }
 
+let backendBaseUrl = null;
+
+function getBackendUrl() {
+  if (!backendBaseUrl) {
+    backendBaseUrl = `http://${BACKEND_HOST}:${BACKEND_PORT}`;
+  }
+  return backendBaseUrl;
+}
+
+async function backendApi(endpoint, method = 'GET', body = null) {
+  const url = `${getBackendUrl()}${endpoint}`;
+  const options = {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+  };
+  if (body) {
+    options.body = JSON.stringify(body);
+  }
+  try {
+    const res = await fetch(url, options);
+    return await res.json();
+  } catch (e) {
+    log('ERROR', 'backend api error:', e.message);
+    return null;
+  }
+}
+
 function getSavedPythonPath() {
   if (!app.isPackaged) return null;
   try {
@@ -193,7 +220,7 @@ function startBackend(workspaceRoot) {
   }
   const settings = getAppSettings();
   const dataDir = app.getPath('userData');
-  const modelsDir = path.join(path.dirname(dataDir), 'ai-codec', 'models');
+  const modelsDir = path.join(path.dirname(dataDir), 'ai-dev', 'models');
   try { fs.mkdirSync(modelsDir, { recursive: true }); } catch (_) {}
   const env = {
     ...process.env,
@@ -481,7 +508,7 @@ function closeSplash() {
 function updateWindowTitle() {
   if (mainWindow && !mainWindow.isDestroyed()) {
     const folderName = projectPath ? path.basename(projectPath) : '';
-    mainWindow.setTitle(folderName ? `AI Codec – ${folderName}` : 'AI Codec');
+    mainWindow.setTitle(folderName ? `AI Dev – ${folderName}` : 'AI Dev');
   }
 }
 
@@ -560,7 +587,7 @@ app.whenReady().then(async () => {
     log('ERROR', 'Startup failed', err.stack || err);
     try {
       const { dialog } = require('electron');
-      dialog.showErrorBox('Startup Error', (err.message || String(err)) + '\n\nCheck app.log in %APPDATA%\\ai-codec');
+      dialog.showErrorBox('Startup Error', (err.message || String(err)) + '\n\nCheck app.log in %APPDATA%\\ai-dev');
     } catch (_) {}
     app.quit();
   }
@@ -570,7 +597,7 @@ process.on('uncaughtException', (err) => {
   writeCrashLog(err);
   try { log('ERROR', 'uncaughtException', err.stack || err); } catch (_) {}
   try {
-    require('electron').dialog.showErrorBox('Fatal Error', (err.message || String(err)) + '\n\nCheck %APPDATA%\\ai-codec\\app.log');
+    require('electron').dialog.showErrorBox('Fatal Error', (err.message || String(err)) + '\n\nCheck %APPDATA%\\ai-dev\\app.log');
   } catch (_) {}
   process.exit(1);
 });
@@ -637,7 +664,7 @@ app.on('before-quit', () => {
 ipcMain.handle('get-backend-url', () => `http://${BACKEND_HOST}:${BACKEND_PORT}`);
 ipcMain.handle('get-project-path', () => projectPath);
 
-const TREE_IGNORE = /(\/|^)(\.git|node_modules|__pycache__|\.venv|venv|\.env|dist|build|chroma_data|\.codec-agent)(\/|$)/i;
+const TREE_IGNORE = /(\/|^)(\.git|node_modules|__pycache__|\.venv|venv|\.env|dist|build|chroma_data|\.ai-dev)(\/|$)/i;
 
 async function buildFileTree(dirPath, relPrefix) {
   const items = [];
@@ -709,29 +736,29 @@ ipcMain.handle('get-file-content', async (_, relPath) => {
 
 ipcMain.handle('get-log-path', () => getLogPath());
 
-ipcMain.handle('get-log-dir', () => {
-  const settings = getAppSettings();
-  return settings.logPath || null;
+ipcMain.handle('get-log-dir', async () => {
+  const result = await backendApi('/settings/logPath');
+  return result && result.value ? result.value : null;
 });
 
-ipcMain.handle('get-theme', () => {
-  const settings = getAppSettings();
-  const t = settings.theme;
+ipcMain.handle('get-theme', async () => {
+  const result = await backendApi('/settings/theme');
+  const t = result && result.value ? result.value : 'system';
   return (t === 'light' || t === 'dark' || t === 'system' || t === 'high-contrast') ? t : 'system';
 });
 
-ipcMain.handle('set-theme', (_, theme) => {
+ipcMain.handle('set-theme', async (_, theme) => {
   if (theme === 'light' || theme === 'dark' || theme === 'system' || theme === 'high-contrast') {
-    setAppSettings({ theme });
+    await backendApi('/settings/theme', 'PUT', theme);
     return true;
   }
   return false;
 });
 
-ipcMain.handle('set-log-dir', (_, dirPath) => {
+ipcMain.handle('set-log-dir', async (_, dirPath) => {
   if (typeof dirPath === 'string') {
     const trimmed = dirPath.trim();
-    setAppSettings({ logPath: trimmed || null });
+    await backendApi('/settings/logPath', 'PUT', trimmed || null);
     return true;
   }
   return false;
@@ -828,52 +855,81 @@ ipcMain.on('retry-backend', () => {
   startBackend(projectPath);
 });
 
-ipcMain.handle('get-llm-provider', () => {
-  const s = getAppSettings();
-  return s.llmProvider || 'Ollama';
+ipcMain.handle('get-llm-provider', async () => {
+  const result = await backendApi('/settings/llmProvider');
+  return result && result.value ? result.value : 'Ollama';
 });
 
-ipcMain.handle('set-llm-provider', (_, provider) => {
+ipcMain.handle('set-llm-provider', async (_, provider) => {
   const valid = ['Ollama', 'LM Studio', 'Built-in', 'OpenAI', 'Anthropic', 'Google'];
   if (valid.includes(provider)) {
-    setAppSettings({ llmProvider: provider });
+    await backendApi('/settings/llmProvider', 'PUT', provider);
     return true;
   }
   return false;
 });
 
-ipcMain.handle('set-llm-config', (_, cfg) => {
-  if (cfg && typeof cfg === 'object') {
-    const updates = {};
-    const valid = ['Ollama', 'LM Studio', 'Built-in', 'OpenAI', 'Anthropic', 'Google'];
-    if (cfg.provider && valid.includes(cfg.provider)) updates.llmProvider = cfg.provider;
-    if (typeof cfg.model === 'string') updates.llmModel = cfg.model;
-    if (typeof cfg.baseUrl === 'string') updates.llmBaseUrl = cfg.baseUrl.trim();
-    if (typeof cfg.apiKey === 'string') updates.llmApiKey = cfg.apiKey;
-    if (cfg.numCtx !== undefined) updates.numCtx = cfg.numCtx;
-    if (cfg.temperature !== undefined) updates.temperature = cfg.temperature;
-    if (cfg.repeatPenalty !== undefined) updates.repeatPenalty = cfg.repeatPenalty;
-    if (cfg.numPredict !== undefined) updates.numPredict = cfg.numPredict;
-    if (Object.keys(updates).length) {
-      setAppSettings(updates);
-      return true;
-    }
+ipcMain.handle('get-llm-config', async () => {
+  const result = await backendApi('/settings/llm');
+  if (result && result.value) {
+    const v = result.value;
+    return {
+      provider: v.llmProvider || 'Ollama',
+      model: v.llmModel || '',
+      baseUrl: v.llmBaseUrl || '',
+      apiKey: v.llmApiKey ? '***' : '',
+      numCtx: v.numCtx ?? '',
+      temperature: v.temperature ?? '',
+      repeatPenalty: v.repeatPenalty ?? '',
+      numPredict: v.numPredict ?? ''
+    };
+  }
+  return {
+    provider: 'Ollama',
+    model: '',
+    baseUrl: '',
+    apiKey: '',
+    numCtx: '',
+    temperature: '',
+    repeatPenalty: '',
+    numPredict: ''
+  };
+});
+
+ipcMain.handle('set-llm-config', async (_, cfg) => {
+  if (!cfg || typeof cfg !== 'object') return false;
+  const updates = {};
+  const valid = ['Ollama', 'LM Studio', 'Built-in', 'OpenAI', 'Anthropic', 'Google'];
+  if (cfg.provider && valid.includes(cfg.provider)) updates.llmProvider = cfg.provider;
+  if (typeof cfg.model === 'string') updates.llmModel = cfg.model;
+  if (typeof cfg.baseUrl === 'string') updates.llmBaseUrl = cfg.baseUrl.trim();
+  if (typeof cfg.apiKey === 'string') updates.llmApiKey = cfg.apiKey;
+  if (cfg.numCtx !== undefined) updates.numCtx = cfg.numCtx;
+  if (cfg.temperature !== undefined) updates.temperature = cfg.temperature;
+  if (cfg.repeatPenalty !== undefined) updates.repeatPenalty = cfg.repeatPenalty;
+  if (cfg.numPredict !== undefined) updates.numPredict = cfg.numPredict;
+  if (Object.keys(updates).length) {
+    const result = await backendApi('/settings', 'POST', { settings: updates });
+    return result && result.ok;
   }
   return false;
 });
 
-ipcMain.handle('get-llm-config', () => {
-  const s = getAppSettings();
-  return {
-    provider: s.llmProvider || 'Ollama',
-    model: s.llmModel || '',
-    baseUrl: s.llmBaseUrl || '',
-    apiKey: s.llmApiKey ? '***' : '',
-    numCtx: s.numCtx ?? '',
-    temperature: s.temperature ?? '',
-    repeatPenalty: s.repeatPenalty ?? '',
-    numPredict: s.numPredict ?? ''
-  };
+ipcMain.handle('get-mcp-settings', async () => {
+  const result = await backendApi('/mcp/external');
+  if (result && result.servers) {
+    return { externalMcpServers: result.servers };
+  }
+  return { externalMcpServers: [] };
+});
+
+ipcMain.handle('set-mcp-settings', async (_, payload) => {
+  if (!payload || typeof payload !== 'object') return false;
+  if (Array.isArray(payload.externalMcpServers)) {
+    const result = await backendApi('/mcp/external', 'POST', { servers: payload.externalMcpServers });
+    return result && result.ok;
+  }
+  return false;
 });
 
 ipcMain.on('restart-backend', () => {

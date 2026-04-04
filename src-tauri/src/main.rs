@@ -1,3 +1,3 @@
 fn main() {
-    ai_codec_lib::run()
+    ai_dev_lib::run()
 }

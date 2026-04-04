@@ -7,7 +7,7 @@ from config import MAX_READ_FILE_SIZE, WORKSPACE_ROOT
 from .path_utils import resolve_workspace_path
 
 _UI_MARKER = "\n__UI__\n"
-_LIST_IGNORE = {".git", "node_modules", "__pycache__", ".venv", "venv", ".env", "dist", "build", "chroma_data", ".codec-agent"}
+_LIST_IGNORE = {".git", "node_modules", "__pycache__", ".venv", "venv", ".env", "dist", "build", "chroma_data", ".ai-dev"}
 
 
 @tool
@@ -115,9 +115,9 @@ def delete_file(path: str) -> str:
 
 @tool
 def save_plan(content: str, title: str = "plan") -> str:
-    """Save a Markdown plan to .codec-agent/plans/ in the workspace. Use after creating a plan. title: short slug for the filename (e.g. 'add-login-form')."""
+    """Save a Markdown plan to .ai-dev/plans/ in the workspace. Use after creating a plan. title: short slug for the filename (e.g. 'add-login-form')."""
     slug = re.sub(r"[^\w\-]", "-", (title or "plan").lower()).strip("-") or "plan"
-    path = f".codec-agent/plans/{slug}.md"
+    path = f".ai-dev/plans/{slug}.md"
     p = resolve_workspace_path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     old_content = p.read_text(encoding="utf-8", errors="replace") if p.exists() else ""

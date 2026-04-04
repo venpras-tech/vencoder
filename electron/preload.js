@@ -34,5 +34,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getLLMConfig: () => ipcRenderer.invoke('get-llm-config'),
   setLLMProvider: (p) => ipcRenderer.invoke('set-llm-provider', p),
   setLLMConfig: (cfg) => ipcRenderer.invoke('set-llm-config', cfg),
-  restartBackend: () => ipcRenderer.send('restart-backend')
+  restartBackend: () => ipcRenderer.send('restart-backend'),
+  getMcpSettings: () => ipcRenderer.invoke('get-mcp-settings'),
+  setMcpSettings: (payload) => ipcRenderer.invoke('set-mcp-settings', payload)
 });

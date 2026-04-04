@@ -25,6 +25,7 @@ from tools import (
     save_plan,
 )
 from tools.duplicate_wrapper import wrap_tools_with_duplicate_check
+from mcp_external_tools import get_external_mcp_tools_sync
 
 AGENT_TOOLS = wrap_tools_with_duplicate_check([
     read_file,
@@ -76,7 +77,9 @@ def build_agent(model: str, mode: str = "agent"):
     elif mode == "plan":
         agent = create_agent(llm, PLAN_TOOLS, system_prompt=PLAN_MODE_PROMPT)
     else:
-        agent = create_agent(llm, AGENT_TOOLS, system_prompt=CODING_AGENT_SYSTEM_PROMPT)
+        ext = get_external_mcp_tools_sync(mode)
+        tools = AGENT_TOOLS + ext if ext else AGENT_TOOLS
+        agent = create_agent(llm, tools, system_prompt=CODING_AGENT_SYSTEM_PROMPT)
     return agent.with_retry(
         stop_after_attempt=3,
         wait_exponential_jitter=True,

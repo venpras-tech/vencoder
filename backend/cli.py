@@ -51,7 +51,7 @@ def _ensure_workspace():
 def _parse_args():
     parser = argparse.ArgumentParser(
         prog="codec",
-        description="AI Codec CLI - coding agent with Ollama (like OpenCode, Claude Code)",
+        description="AI Dev CLI - coding agent with Ollama (like OpenCode, Claude Code)",
     )
     parser.add_argument("--version", "-v", action="version", version="1.0.0")
     parser.add_argument("prompt_args", nargs="*", help=argparse.SUPPRESS)
@@ -186,7 +186,7 @@ async def _run_chat(args, model_override=None):
             if tui:
                 tui.welcome(args.mode)
             else:
-                print("AI Codec - type your message and press Enter. Ctrl+C to exit, /quit to exit.")
+                print("AI Dev - type your message and press Enter. Ctrl+C to exit, /quit to exit.")
                 print()
 
         while True:

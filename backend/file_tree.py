@@ -5,7 +5,7 @@ from typing import Any
 from config import MAX_READ_FILE_SIZE, WORKSPACE_ROOT
 
 _TREE_IGNORE = re.compile(
-    r"(^|/)(\.git|node_modules|__pycache__|\.venv|venv|\.env|dist|build|chroma_data|\.codec-agent)(/|$)",
+    r"(^|/)(\.git|node_modules|__pycache__|\.venv|venv|\.env|dist|build|chroma_data|\.ai-dev)(/|$)",
     re.I,
 )
 

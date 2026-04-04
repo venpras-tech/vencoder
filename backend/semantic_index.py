@@ -70,7 +70,7 @@ def _check_chroma():
         return False
 
 _INDEX_IGNORE = re.compile(
-    r"(^|/)(\.git|node_modules|__pycache__|\.venv|venv|\.env|dist|build|chroma_data|faiss_data|\.codec-agent)(/|$)",
+    r"(^|/)(\.git|node_modules|__pycache__|\.venv|venv|\.env|dist|build|chroma_data|faiss_data|\.ai-dev)(/|$)",
     re.I,
 )
 _INDEX_EXTENSIONS = frozenset(

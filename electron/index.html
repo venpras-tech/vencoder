@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI Codec</title>
+  <title>AI Dev</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -14,7 +14,7 @@
   <div class="app">
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-header">
-        <span class="sidebar-logo" id="sidebar-logo">AI Codec</span>
+        <span class="sidebar-logo" id="sidebar-logo">AI Dev</span>
         <button type="button" class="sidebar-toggle" id="sidebar-toggle" title="Toggle sidebar" aria-label="Toggle sidebar">
           <svg class="sidebar-toggle-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M3 12h18"/><path d="M3 18h18"/></svg>
           <svg class="sidebar-toggle-icon collapsed" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
@@ -108,7 +108,7 @@
       </div>
       <div class="page-content" id="page-home">
         <div class="home-view">
-          <h1 class="home-title">AI Codec</h1>
+          <h1 class="home-title">AI Dev</h1>
           <p class="home-desc">How can I help you today?</p>
           <div class="home-input-container" id="home-input-container"></div>
           <div class="home-suggestions">
@@ -143,54 +143,96 @@
       <div class="page-content" id="page-settings" hidden>
         <div class="settings-view">
           <h2 class="settings-title">Settings</h2>
-          <div class="settings-field">
-            <label class="settings-label">Theme</label>
-            <div class="settings-theme-options">
-              <label class="settings-radio">
-                <input type="radio" name="theme" value="light" id="theme-light">
-                <span>Light</span>
-              </label>
-              <label class="settings-radio">
-                <input type="radio" name="theme" value="dark" id="theme-dark">
-                <span>Dark</span>
-              </label>
-              <label class="settings-radio">
-                <input type="radio" name="theme" value="system" id="theme-system">
-                <span>System</span>
-              </label>
-              <label class="settings-radio">
-                <input type="radio" name="theme" value="high-contrast" id="theme-high-contrast">
-                <span>High contrast</span>
-              </label>
-            </div>
-            <p class="settings-hint">System follows your OS appearance. High contrast increases contrast for accessibility.</p>
-          </div>
-          <div class="settings-field">
-            <label class="settings-label" for="log-path-input">Log path</label>
-            <div class="settings-input-row">
-              <input type="text" id="log-path-input" class="settings-input" placeholder="Default location">
-              <button type="button" class="btn-browse" id="btn-log-path-browse" title="Select folder">Browse</button>
-              <button type="button" class="btn-browse btn-apply" id="btn-log-path-apply" title="Apply">Apply</button>
-            </div>
-            <p class="settings-hint">Folder where app.log is stored. Use Browse to select, or type a path. Leave empty for default.</p>
-          </div>
-          <div class="settings-field settings-field-llm">
-            <label class="settings-label">LLM parameters</label>
-            <p class="settings-hint">Temperature and max tokens apply to all providers. Restart backend to apply changes.</p>
-            <div class="settings-llm-grid">
-              <div class="settings-llm-item">
-                <label class="settings-llm-label" for="setting-temperature">Temperature</label>
-                <input type="number" id="setting-temperature" class="settings-input settings-input-num" min="0" max="2" step="0.05" placeholder="0.1">
-                <span class="settings-llm-default">Default: 0.1</span>
+          <div class="settings-layout">
+            <nav class="settings-nav" role="tablist" aria-label="Settings sections">
+              <button type="button" class="settings-nav-item active" id="settings-nav-general" data-settings-panel="general" role="tab" aria-selected="true" aria-controls="settings-panel-general">General</button>
+              <button type="button" class="settings-nav-item" id="settings-nav-llm" data-settings-panel="llm" role="tab" aria-selected="false" aria-controls="settings-panel-llm">LLM</button>
+              <button type="button" class="settings-nav-item" id="settings-nav-mcp" data-settings-panel="mcp" role="tab" aria-selected="false" aria-controls="settings-panel-mcp">MCP</button>
+            </nav>
+            <div class="settings-panels">
+              <div class="settings-panel active" id="settings-panel-general" role="tabpanel" aria-labelledby="settings-nav-general">
+                <h3 class="settings-panel-heading">General</h3>
+                <div class="settings-field">
+                  <label class="settings-label">Theme</label>
+                  <div class="settings-theme-options">
+                    <label class="settings-radio">
+                      <input type="radio" name="theme" value="light" id="theme-light">
+                      <span>Light</span>
+                    </label>
+                    <label class="settings-radio">
+                      <input type="radio" name="theme" value="dark" id="theme-dark">
+                      <span>Dark</span>
+                    </label>
+                    <label class="settings-radio">
+                      <input type="radio" name="theme" value="system" id="theme-system">
+                      <span>System</span>
+                    </label>
+                    <label class="settings-radio">
+                      <input type="radio" name="theme" value="high-contrast" id="theme-high-contrast">
+                      <span>High contrast</span>
+                    </label>
+                  </div>
+                  <p class="settings-hint">System follows your OS appearance. High contrast increases contrast for accessibility.</p>
+                </div>
+                <div class="settings-field">
+                  <label class="settings-label" for="log-path-input">Log path</label>
+                  <div class="settings-input-row">
+                    <input type="text" id="log-path-input" class="settings-input" placeholder="Default location">
+                    <button type="button" class="btn-browse" id="btn-log-path-browse" title="Select folder">Browse</button>
+                    <button type="button" class="btn-browse btn-apply" id="btn-log-path-apply" title="Apply">Apply</button>
+                  </div>
+                  <p class="settings-hint">Folder where app.log is stored. Use Browse to select, or type a path. Leave empty for default.</p>
+                </div>
               </div>
-              <div class="settings-llm-item">
-                <label class="settings-llm-label" for="setting-num-predict">Max tokens</label>
-                <input type="number" id="setting-num-predict" class="settings-input settings-input-num" min="0" max="65536" step="1" placeholder="0">
-                <span class="settings-llm-default">Default: 0 (unlimited)</span>
+              <div class="settings-panel" id="settings-panel-llm" role="tabpanel" aria-labelledby="settings-nav-llm" hidden>
+                <h3 class="settings-panel-heading">LLM parameters</h3>
+                <div class="settings-field settings-field-llm">
+                  <p class="settings-hint">Temperature and max tokens apply to all providers. Restart backend to apply changes.</p>
+                  <div class="settings-llm-grid">
+                    <div class="settings-llm-item">
+                      <label class="settings-llm-label" for="setting-temperature">Temperature</label>
+                      <input type="number" id="setting-temperature" class="settings-input settings-input-num" min="0" max="2" step="0.05" placeholder="0.1">
+                      <span class="settings-llm-default">Default: 0.1</span>
+                    </div>
+                    <div class="settings-llm-item">
+                      <label class="settings-llm-label" for="setting-num-predict">Max tokens</label>
+                      <input type="number" id="setting-num-predict" class="settings-input settings-input-num" min="0" max="65536" step="1" placeholder="0">
+                      <span class="settings-llm-default">Default: 0 (unlimited)</span>
+                    </div>
+                  </div>
+                  <div class="settings-input-row">
+                    <button type="button" class="btn-browse btn-apply" id="btn-llm-params-apply" title="Apply and restart backend">Apply</button>
+                  </div>
+                </div>
               </div>
-            </div>
-            <div class="settings-input-row">
-              <button type="button" class="btn-browse btn-apply" id="btn-llm-params-apply" title="Apply and restart backend">Apply</button>
+              <div class="settings-panel" id="settings-panel-mcp" role="tabpanel" aria-labelledby="settings-nav-mcp" hidden>
+                <h3 class="settings-panel-heading">MCP (Model Context Protocol)</h3>
+                <div class="settings-field settings-field-mcp">
+                  <p class="settings-hint">Model Context Protocol (stdio): other MCP clients can call this project&apos;s workspace tools over stdio. Enable here to start the embedded MCP server with the backend, or copy the JSON below into another client&apos;s MCP configuration to run a dedicated stdio process for this project.</p>
+                  <div class="settings-mcp-row">
+                    <label class="settings-mcp-check">
+                      <input type="checkbox" id="setting-mcp-enabled">
+                      <span>Enable MCP server with backend</span>
+                    </label>
+                  </div>
+                  <div class="settings-mcp-row">
+                    <label class="settings-llm-label" for="setting-mcp-port">Reserved port (future / docs)</label>
+                    <input type="number" id="setting-mcp-port" class="settings-input settings-input-num" min="1024" max="65535" step="1" placeholder="8766">
+                  </div>
+                  <label class="settings-label settings-label-sub" for="setting-mcp-external-json">Agent — external MCP servers (stdio)</label>
+                  <p class="settings-hint">JSON array of stdio MCP servers the backend runs for the coding agent (<code>id</code>, <code>command</code>, <code>args</code>, optional <code>env</code>, <code>cwd</code>). Tool names are prefixed <code>ext_&lt;id&gt;_</code>. Save and restart the backend to apply.</p>
+                  <textarea id="setting-mcp-external-json" class="settings-mcp-external-json" rows="8" spellcheck="false" placeholder='[{"id":"example","name":"Example","command":"npx","args":["-y","@modelcontextprotocol/server-filesystem","/path"]}]'></textarea>
+                  <div class="settings-input-row settings-mcp-actions">
+                    <button type="button" class="btn-browse btn-apply" id="btn-mcp-apply" title="Save and restart backend">Save MCP settings</button>
+                    <button type="button" class="btn-browse" id="btn-mcp-refresh-status" title="Refresh status">Refresh status</button>
+                    <button type="button" class="btn-browse" id="btn-mcp-external-discover" title="List tools from configured servers">Discover external</button>
+                    <button type="button" class="btn-browse" id="btn-mcp-copy-json" title="Copy mcpServers JSON for external MCP clients">Copy client JSON</button>
+                  </div>
+                  <p class="settings-mcp-status" id="setting-mcp-status" aria-live="polite"></p>
+                  <label class="settings-label settings-label-sub" for="setting-mcp-json-preview">External client — merge under <code>mcpServers</code></label>
+                  <pre class="settings-mcp-json" id="setting-mcp-json-preview" readonly></pre>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -220,17 +262,17 @@
       </div>
       <div class="page-content" id="page-help" hidden>
         <div class="help-view">
-          <h2 class="help-title">AI Codec Help</h2>
+          <h2 class="help-title">AI Dev Help</h2>
           <section class="help-section">
             <h3 class="help-section-title">Modes</h3>
-            <p class="help-desc">Choose how the AI responds. Use the dropdown above the input. Aligned with Cursor/OpenCode-style workflows.</p>
+            <p class="help-desc">Choose how the AI responds. Use the dropdown above the input.</p>
             <dl class="help-dl">
               <dt>Agent (Role)</dt>
               <dd>Default mode. Defines the task, clarifies when ambiguous, then implements. The AI asks 1–3 specific questions if the request is vague before coding. Uses file structure context to avoid hallucinations. Best for well-defined tasks.</dd>
               <dt>Ask (Clarify Needs)</dt>
               <dd>Read-only mode. Explores and answers without changes. Asks focused follow-ups when questions are vague. Use for learning, planning, and understanding code before modifying it.</dd>
               <dt>Plan (Step-by-Step Execution Plan)</dt>
-              <dd>Creates a detailed Markdown plan before any code. Researches the codebase, asks clarifying questions, and produces a reviewable plan with file paths and numbered steps. Saves to <code>.codec-agent/plans/</code>. Use for complex, multi-file changes. <kbd>Shift+Tab</kbd> to switch quickly.</dd>
+              <dd>Creates a detailed Markdown plan before any code. Researches the codebase, asks clarifying questions, and produces a reviewable plan with file paths and numbered steps. Saves to <code>.ai-dev/plans/</code>. Use for complex, multi-file changes. <kbd>Shift+Tab</kbd> to switch quickly.</dd>
             </dl>
           </section>
           <section class="help-section">
@@ -612,6 +654,199 @@
       api.setLLMConfig(cfg).then(function(ok) {
         if (ok && api.restartBackend) api.restartBackend();
       });
+    });
+  }
+  window.__vencoderLoadLLMParams = loadLLMParams;
+})();
+  </script>
+  <script>
+(function() {
+  var STORAGE_KEY = 'vencoder-settings-section';
+  function showSettingsPanel(id) {
+    var nav = document.querySelector('.settings-nav');
+    if (!nav) return;
+    if (id !== 'general' && id !== 'llm' && id !== 'mcp') id = 'general';
+    var buttons = nav.querySelectorAll('.settings-nav-item');
+    buttons.forEach(function(btn) {
+      var sel = btn.getAttribute('data-settings-panel') === id;
+      btn.classList.toggle('active', sel);
+      btn.setAttribute('aria-selected', sel ? 'true' : 'false');
+    });
+    ['general', 'llm', 'mcp'].forEach(function(s) {
+      var p = document.getElementById('settings-panel-' + s);
+      if (p) {
+        p.hidden = s !== id;
+        p.classList.toggle('active', s === id);
+      }
+    });
+    try { localStorage.setItem(STORAGE_KEY, id); } catch (e) {}
+    if (id === 'llm' && typeof window.__vencoderLoadLLMParams === 'function') window.__vencoderLoadLLMParams();
+    if (id === 'mcp' && typeof window.__vencoderLoadMcpUi === 'function') window.__vencoderLoadMcpUi();
+  }
+  window.__showSettingsPanel = showSettingsPanel;
+  window.initSettingsTabs = function() {
+    var saved = 'general';
+    try { saved = localStorage.getItem(STORAGE_KEY) || 'general'; } catch (e) {}
+    if (saved === 'appearance') saved = 'general';
+    showSettingsPanel(saved);
+  };
+  var nav = document.querySelector('.settings-nav');
+  if (nav) {
+    nav.addEventListener('click', function(e) {
+      var t = e.target.closest('.settings-nav-item');
+      if (!t) return;
+      var id = t.getAttribute('data-settings-panel');
+      if (id) showSettingsPanel(id);
+    });
+  }
+  var pageSettings = document.getElementById('page-settings');
+  if (pageSettings) {
+    var settingsPageObserver = new MutationObserver(function() {
+      if (!pageSettings.hidden && typeof window.initSettingsTabs === 'function') window.initSettingsTabs();
+    });
+    settingsPageObserver.observe(pageSettings, { attributes: true, attributeFilter: ['hidden'] });
+    if (!pageSettings.hidden) window.initSettingsTabs();
+  }
+})();
+  </script>
+  <script>
+(function() {
+  var api = window.electronAPI;
+  if (!api || !api.getMcpSettings) return;
+  var statusEl = document.getElementById('setting-mcp-status');
+  function backendUrl() {
+    if (api.getBackendUrl) return api.getBackendUrl();
+    return Promise.resolve('http://127.0.0.1:8765');
+  }
+  function loadMcpUi(opts) {
+    opts = opts || {};
+    var afterRestart = opts.afterRestart === true;
+    var maxAttempts = afterRestart ? 40 : 1;
+    var retryDelayMs = afterRestart ? 350 : 0;
+    api.getMcpSettings().then(function(s) {
+      var en = document.getElementById('setting-mcp-enabled');
+      var port = document.getElementById('setting-mcp-port');
+      var ext = document.getElementById('setting-mcp-external-json');
+      if (en) en.checked = !!s.enabled;
+      if (port) port.value = s.port != null ? String(s.port) : '8766';
+      if (ext) {
+        try {
+          var arr = Array.isArray(s.externalMcpServers) ? s.externalMcpServers : [];
+          ext.value = JSON.stringify(arr, null, 2);
+        } catch (e) {
+          ext.value = '[]';
+        }
+      }
+    }).catch(function() {});
+    var pre = document.getElementById('setting-mcp-json-preview');
+    function fetchBackendStatus(attempt) {
+      backendUrl().then(function(base) {
+        return fetch(base + '/mcp/status').then(function(r) {
+          if (!r.ok) throw new Error('status');
+          return r.json();
+        }).then(function(st) {
+          if (statusEl) {
+            statusEl.textContent = 'MCP ' + (st.enabled ? 'on' : 'off') + ' in process · ' + (st.running ? 'stdio server running' : 'stdio not active') + (st.workspaceRoot ? ' · ' + st.workspaceRoot : '');
+          }
+          return fetch(base + '/mcp/client-config');
+        }).then(function(r) {
+          if (!r.ok) throw new Error('config');
+          return r.json();
+        }).then(function(cfg) {
+          if (pre) pre.textContent = JSON.stringify({ mcpServers: cfg.mcpServers }, null, 2);
+        });
+      }).catch(function() {
+        if (attempt + 1 < maxAttempts) {
+          if (statusEl && afterRestart) {
+            statusEl.textContent = 'MCP settings saved. Waiting for backend…';
+          }
+          setTimeout(function() { fetchBackendStatus(attempt + 1); }, retryDelayMs || 350);
+        } else {
+          if (statusEl) statusEl.textContent = 'Backend not reachable. Open a project and wait for the backend, then refresh.';
+          if (pre) pre.textContent = '';
+        }
+      });
+    }
+    if (afterRestart) {
+      if (statusEl) statusEl.textContent = 'MCP settings saved. Waiting for backend…';
+      setTimeout(function() { fetchBackendStatus(0); }, 400);
+    } else {
+      fetchBackendStatus(0);
+    }
+  }
+  window.__vencoderLoadMcpUi = loadMcpUi;
+  var btnApply = document.getElementById('btn-mcp-apply');
+  if (btnApply) {
+    btnApply.addEventListener('click', function() {
+      var en = document.getElementById('setting-mcp-enabled');
+      var port = document.getElementById('setting-mcp-port');
+      var extEl = document.getElementById('setting-mcp-external-json');
+      var payload = { enabled: !!(en && en.checked) };
+      if (port && port.value.trim() !== '') {
+        var n = parseInt(port.value, 10);
+        if (!isNaN(n)) payload.port = n;
+      }
+      if (extEl) {
+        var raw = (extEl.value || '').trim();
+        if (raw === '') {
+          payload.externalMcpServers = [];
+        } else {
+          try {
+            var parsed = JSON.parse(raw);
+            if (!Array.isArray(parsed)) {
+              if (statusEl) statusEl.textContent = 'External MCP JSON must be an array.';
+              return;
+            }
+            payload.externalMcpServers = parsed;
+          } catch (e) {
+            if (statusEl) statusEl.textContent = 'Invalid JSON in external MCP servers: ' + (e && e.message ? e.message : String(e));
+            return;
+          }
+        }
+      }
+      api.setMcpSettings(payload).then(function(ok) {
+        var restarted = false;
+        if (ok && api.restartBackend) {
+          api.restartBackend();
+          restarted = true;
+        }
+        loadMcpUi(restarted ? { afterRestart: true } : {});
+      });
+    });
+  }
+  var btnRef = document.getElementById('btn-mcp-refresh-status');
+  if (btnRef) btnRef.addEventListener('click', function() { loadMcpUi(); });
+  var btnExtDisc = document.getElementById('btn-mcp-external-discover');
+  if (btnExtDisc) {
+    btnExtDisc.addEventListener('click', function() {
+      backendUrl().then(function(base) {
+        return fetch(base + '/mcp/external').then(function(r) {
+          if (!r.ok) throw new Error('bad');
+          return r.json();
+        });
+      }).then(function(data) {
+        if (statusEl) {
+          var lines = (data.discovery || []).map(function(d) {
+            if (d.error) return d.id + ': ' + d.error;
+            return d.id + ': ' + (d.tools || []).join(', ');
+          });
+          statusEl.textContent = 'External MCP discovery · ' + (lines.length ? lines.join(' · ') : 'no servers');
+        }
+      }).catch(function() {
+        if (statusEl) statusEl.textContent = 'Discover failed (backend not reachable or error).';
+      });
+    });
+  }
+  var btnCopy = document.getElementById('btn-mcp-copy-json');
+  if (btnCopy) {
+    btnCopy.addEventListener('click', function() {
+      var pre = document.getElementById('setting-mcp-json-preview');
+      if (!pre || !pre.textContent) return;
+      navigator.clipboard.writeText(pre.textContent).then(function() {
+        var o = btnCopy.textContent;
+        btnCopy.textContent = 'Copied!';
+        setTimeout(function() { btnCopy.textContent = o; }, 1500);
+      }).catch(function() {});
     });
   }
 })();

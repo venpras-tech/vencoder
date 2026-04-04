@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "AI Codec",
+  "productName": "AI Dev",
   "version": "1.0.0",
-  "identifier": "com.aicodec.app",
+  "identifier": "com.aidev.app",
   "build": {
     "beforeDevCommand": "npx serve electron -l 1420",
     "devUrl": "http://localhost:1420",
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "AI Codec",
+        "title": "AI Dev",
         "width": 1000,
         "height": 720,
         "resizable": true,
@@ -35,8 +35,8 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "longDescription": "AI codec with Ollama, semantic index, and file tools",
-    "shortDescription": "AI Codec",
+    "longDescription": "AI coding assistant with Ollama, semantic index, and file tools",
+    "shortDescription": "AI Dev",
     "resources": ["../backend", "../python-runtime"],
     "category": "DeveloperTool",
     "copyright": "",

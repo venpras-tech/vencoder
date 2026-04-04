@@ -1,9 +1,21 @@
+import json
 import subprocess
 import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from pathlib import Path
-from typing import Optional
 
-from config import BUILTIN_MODELS_DIR
+from config import BUILTIN_MODELS_DIR, HUGGINGFACE_BASE_URL
+
+_SEARCH_CACHE_TTL_SEC = 300
+_SEARCH_CACHE_MAX = 64
+_search_cache: dict[tuple[str, int], tuple[float, list]] = {}
+
+_MODEL_CARD_CACHE_TTL_SEC = 600
+_MODEL_CARD_CACHE_MAX = 128
+_model_card_cache: dict[str, tuple[float, dict]] = {}
 
 
 def _llama_cpp_available() -> bool:
@@ -44,6 +56,7 @@ SUGGESTED_MODELS = [
     {"id": "phi-3.5-mini-q4", "name": "Phi-3.5 Mini (Q4)", "repo": "MaziyarPanahi/Phi-3.5-mini-instruct-GGUF", "file": "Phi-3.5-mini-instruct.Q4_K_M.gguf", "size_gb": 2.3, "tier": "medium", "params": "3.8B"},
     {"id": "qwen3.5-4b-q4", "name": "Qwen3.5 4B (Q4)", "repo": "unsloth/Qwen3.5-4B-GGUF", "file": "Qwen3.5-4B-Q4_K_M.gguf", "size_gb": 2.7, "tier": "medium", "params": "4B"},
     {"id": "qwen3.5-9b-q4", "name": "Qwen3.5 9B (Q4)", "repo": "lmstudio-community/Qwen3.5-9B-GGUF", "file": "Qwen3.5-9B-Q4_K_M.gguf", "size_gb": 5.5, "tier": "high", "params": "9B"},
+    {"id": "gpt-oss-20b-q4", "name": "GPT-OSS 20B (Q4)", "repo": "msohail32/GPT-OSS-20B-GGUF", "file": "GPT-OSS-20B-Q4_K_M.gguf", "size_gb": 13.0, "tier": "high", "params": "20B"},
 ]
 
 
@@ -80,6 +93,7 @@ def get_suggested_for_system() -> list[dict]:
     tier = get_system_tier()
     ram_gb = get_system_ram_gb()
     installed = get_installed_models()
+    comfort_gb = ram_gb * 0.5
     result = []
     for m in SUGGESTED_MODELS:
         stem = Path(m["file"]).stem
@@ -90,8 +104,230 @@ def get_suggested_for_system() -> list[dict]:
             item["recommended"] = True
         else:
             item["recommended"] = m["size_gb"] <= ram_gb
+        item["likely_too_large"] = m["size_gb"] > comfort_gb
         result.append(item)
     return sorted(result, key=lambda x: (not x["recommended"], x["size_gb"]))
+
+
+def hf_file_url(repo_id: str, filename: str) -> str:
+    base = HUGGINGFACE_BASE_URL.rstrip("/")
+    return f"{base}/{repo_id}/resolve/main/{filename}"
+
+
+def bytes_likely_too_large(file_size: int) -> bool:
+    if file_size <= 0:
+        return False
+    ram_gb = get_system_ram_gb()
+    max_bytes = ram_gb * 0.5 * (1024**3)
+    return file_size > max_bytes
+
+
+def _is_gguf_model_card(m: dict) -> bool:
+    tags = m.get("tags") or []
+    if any("gguf" in str(t).lower() for t in tags):
+        return True
+    mid = (m.get("id") or m.get("modelId") or "").lower()
+    return "gguf" in mid or mid.endswith("-gguf")
+
+
+def _prune_cache(cache: dict, max_entries: int) -> None:
+    if len(cache) <= max_entries:
+        return
+    keys = sorted(cache.keys(), key=lambda k: cache[k][0])[: max(0, len(cache) - max_entries)]
+    for k in keys:
+        cache.pop(k, None)
+
+
+def hf_search_models(query: str, limit: int = 25) -> list[dict]:
+    lim = min(max(1, int(limit)), 50)
+    qn = (query or "").strip().lower() or "gguf"
+    now = time.monotonic()
+    key = (qn, lim)
+    if key in _search_cache:
+        ts, cached = _search_cache[key]
+        if now - ts < _SEARCH_CACHE_TTL_SEC:
+            return list(cached)
+    base = HUGGINGFACE_BASE_URL.rstrip("/")
+    q = (query or "").strip() or "gguf"
+    qs = urllib.parse.urlencode({"search": q, "limit": 100, "sort": "downloads", "direction": "-1"})
+    url = f"{base}/api/models?{qs}"
+    req = urllib.request.Request(url, headers={"User-Agent": "AI-Dev/1.0"})
+    with urllib.request.urlopen(req, timeout=25) as r:
+        data = json.loads(r.read().decode())
+    if not isinstance(data, list):
+        return []
+    out = []
+    for m in data:
+        if not isinstance(m, dict) or not _is_gguf_model_card(m):
+            continue
+        mid = m.get("id") or m.get("modelId") or ""
+        if not mid:
+            continue
+        out.append({
+            "id": mid,
+            "downloads": m.get("downloads"),
+            "likes": m.get("likes"),
+            "pipeline_tag": m.get("pipeline_tag"),
+            "last_modified": m.get("lastModified"),
+        })
+        if len(out) >= lim:
+            break
+    _search_cache[key] = (now, list(out))
+    _prune_cache(_search_cache, _SEARCH_CACHE_MAX)
+    return out
+
+
+def hf_latest_gguf_models(limit: int = 20) -> list[dict]:
+    lim = min(max(1, int(limit)), 40)
+    base = HUGGINGFACE_BASE_URL.rstrip("/")
+    qs = urllib.parse.urlencode({"search": "gguf", "limit": 120, "sort": "lastModified", "direction": "-1"})
+    url = f"{base}/api/models?{qs}"
+    req = urllib.request.Request(url, headers={"User-Agent": "AI-Dev/1.0"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        data = json.loads(r.read().decode())
+    if not isinstance(data, list):
+        return []
+    out = []
+    for m in data:
+        if not isinstance(m, dict) or not _is_gguf_model_card(m):
+            continue
+        mid = m.get("id") or m.get("modelId") or ""
+        if not mid:
+            continue
+        out.append({
+            "id": mid,
+            "downloads": m.get("downloads"),
+            "likes": m.get("likes"),
+            "pipeline_tag": m.get("pipeline_tag"),
+            "last_modified": m.get("lastModified"),
+        })
+        if len(out) >= lim:
+            break
+    return out
+
+
+def fetch_model_card(repo_id: str) -> dict:
+    rid = (repo_id or "").strip()
+    if not rid or "/" not in rid:
+        return {}
+    now = time.monotonic()
+    if rid in _model_card_cache:
+        ts, data = _model_card_cache[rid]
+        if now - ts < _MODEL_CARD_CACHE_TTL_SEC and isinstance(data, dict):
+            return data
+    base = HUGGINGFACE_BASE_URL.rstrip("/")
+    enc = "/".join(urllib.parse.quote(p, safe="") for p in rid.split("/"))
+    url = f"{base}/api/models/{enc}"
+    req = urllib.request.Request(url, headers={"User-Agent": "AI-Dev/1.0"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        data = json.loads(r.read().decode())
+    if not isinstance(data, dict):
+        data = {}
+    _model_card_cache[rid] = (now, data)
+    _prune_cache(_model_card_cache, _MODEL_CARD_CACHE_MAX)
+    return data
+
+
+def _quant_preference(filename: str) -> int:
+    n = (filename or "").lower()
+    if "q4_k_m" in n or "q4km" in n:
+        return 100
+    if "q4_k_s" in n:
+        return 95
+    if "q5_k_m" in n:
+        return 90
+    if "q4_0" in n or "-q4." in n:
+        return 85
+    if "q3" in n:
+        return 82
+    if "q5" in n:
+        return 78
+    if "q6" in n:
+        return 75
+    if "q8" in n:
+        return 72
+    if "f16" in n or "fp16" in n:
+        return 35
+    if "f32" in n:
+        return 15
+    return 50
+
+
+def hf_model_gguf_files(repo_id: str) -> list[dict]:
+    data = fetch_model_card(repo_id)
+    siblings = data.get("siblings") or []
+    out = []
+    for s in siblings:
+        if not isinstance(s, dict):
+            continue
+        rf = s.get("rfilename") or ""
+        if not rf.lower().endswith(".gguf"):
+            continue
+        size = int(s.get("size") or 0)
+        base_name = Path(rf).name
+        out.append({
+            "filename": rf,
+            "size": size,
+            "size_gb": round(size / (1024**3), 2) if size else None,
+            "likely_too_large": bytes_likely_too_large(size),
+            "quant_score": _quant_preference(base_name),
+            "preferred_quant": _quant_preference(base_name) >= 70,
+        })
+    out.sort(key=lambda x: (-(x.get("quant_score") or 0), x.get("size") or 0))
+    return out
+
+
+def hf_repo_card_summary(repo_id: str) -> dict:
+    c = fetch_model_card(repo_id)
+    if not isinstance(c, dict):
+        return {"id": repo_id, "description": "", "downloads": None, "likes": None, "pipeline_tag": ""}
+    desc = ""
+    cd = c.get("cardData")
+    if isinstance(cd, dict):
+        desc = str(cd.get("description") or cd.get("summary") or "")[:1200]
+    elif isinstance(cd, str):
+        desc = cd[:1200]
+    return {
+        "id": repo_id,
+        "description": desc.strip(),
+        "downloads": c.get("downloads"),
+        "likes": c.get("likes"),
+        "pipeline_tag": c.get("pipeline_tag") or "",
+    }
+
+
+def hf_repos_install_status(repo_ids: list[str]) -> dict[str, bool]:
+    installed = set(get_installed_models())
+    result: dict[str, bool] = {}
+    if not installed:
+        for rid in repo_ids:
+            result[rid] = False
+        return result
+    for rid in repo_ids[:40]:
+        rid = (rid or "").strip()
+        if not rid or "/" not in rid:
+            result[rid] = False
+            continue
+        try:
+            files = hf_model_gguf_files(rid)
+        except Exception:
+            result[rid] = False
+            continue
+        found = False
+        for f in files:
+            fn = f.get("filename") or ""
+            if not fn:
+                continue
+            stem = Path(fn).stem
+            if stem in installed:
+                found = True
+                break
+            base = Path(fn).name
+            if model_is_installed(base):
+                found = True
+                break
+        result[rid] = found
+    return result
 
 
 def download_model(repo_id: str, filename: str) -> tuple[bool, str]:
@@ -102,9 +338,8 @@ def download_model(repo_id: str, filename: str) -> tuple[bool, str]:
     dest = BUILTIN_MODELS_DIR / filename
     if dest.exists():
         return True, str(dest)
-    url = f"https://huggingface.co/{repo_id}/resolve/main/{filename}"
+    url = hf_file_url(repo_id, filename)
     try:
-        import urllib.request
         req = urllib.request.Request(url, headers={"User-Agent": "VenCode/1.0"})
         with urllib.request.urlopen(req, timeout=30) as resp:
             total = int(resp.headers.get("Content-Length", 0))
@@ -134,9 +369,8 @@ def download_model_with_progress(repo_id: str, filename: str, should_cancel=None
     if dest.exists():
         yield {"ok": True, "path": str(dest), "model": dest.stem}
         return
-    url = f"https://huggingface.co/{repo_id}/resolve/main/{filename}"
+    url = hf_file_url(repo_id, filename)
     try:
-        import urllib.request
         req = urllib.request.Request(url, headers={"User-Agent": "VenCode/1.0"})
         cancelled = False
         with urllib.request.urlopen(req, timeout=30) as resp:
