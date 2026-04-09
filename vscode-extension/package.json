@@ -1,0 +1,296 @@
+{
+  "name": "vencoder",
+  "displayName": "VenCoder AI Assistant",
+  "description": "AI coding assistant powered by VenCoder with real-time collaboration",
+  "version": "1.0.0",
+  "publisher": "vencoder",
+  "engines": {
+    "vscode": "^1.110.0"
+  },
+  "categories": [
+    "AI",
+    "Programming Languages"
+  ],
+  "keywords": [
+    "ai",
+    "coding",
+    "assistant",
+    "llm",
+    "copilot"
+  ],
+  "activationEvents": [
+    "onCommand:vencoder.chat",
+    "onCommand:vencoder.run",
+    "onCommand:vencoder.continue",
+    "onView:vencoder.chatView",
+    "onView:vencoder.collabView"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "vencoder.chat",
+        "title": "VenCoder: Chat",
+        "description": "Start a chat session with VenCoder",
+        "category": "VenCoder"
+      },
+      {
+        "command": "vencoder.run",
+        "title": "VenCoder: Run Command",
+        "description": "Run a single prompt with VenCoder",
+        "category": "VenCoder"
+      },
+      {
+        "command": "vencoder.continue",
+        "title": "VenCoder: Continue Session",
+        "description": "Continue the last chat session",
+        "category": "VenCoder"
+      },
+      {
+        "command": "vencoder.stop",
+        "title": "VenCoder: Stop",
+        "description": "Stop the current operation",
+        "category": "VenCoder"
+      },
+      {
+        "command": "vencoder.explain",
+        "title": "VenCoder: Explain Code",
+        "description": "Explain the selected code",
+        "category": "VenCoder"
+      },
+      {
+        "command": "vencoder.refactor",
+        "title": "VenCoder: Refactor",
+        "description": "Refactor the selected code",
+        "category": "VenCoder"
+      },
+      {
+        "command": "vencoder.fix",
+        "title": "VenCoder: Fix Problem",
+        "description": "Fix the selected code problem",
+        "category": "VenCoder"
+      },
+      {
+        "command": "vencoder.test",
+        "title": "VenCoder: Generate Tests",
+        "description": "Generate tests for the selected code",
+        "category": "VenCoder"
+      },
+      {
+        "command": "vencoder.collab.create",
+        "title": "VenCoder: Create Collaboration Room",
+        "description": "Create a new collaboration room",
+        "category": "VenCoder"
+      },
+      {
+        "command": "vencoder.collab.join",
+        "title": "VenCoder: Join Room",
+        "description": "Join an existing collaboration room",
+        "category": "VenCoder"
+      },
+      {
+        "command": "vencoder.collab.leave",
+        "title": "VenCoder: Leave Room",
+        "description": "Leave the current collaboration room",
+        "category": "VenCoder"
+      },
+      {
+        "command": "vencoder.settings",
+        "title": "VenCoder: Settings",
+        "description": "Open VenCoder settings",
+        "category": "VenCoder"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "vencoder.explain",
+          "when": "editorHasSelection",
+          "group": "vencoder@1"
+        },
+        {
+          "command": "vencoder.refactor",
+          "when": "editorHasSelection",
+          "group": "vencoder@2"
+        },
+        {
+          "command": "vencoder.fix",
+          "when": "editorHasSelection",
+          "group": "vencoder@3"
+        },
+        {
+          "command": "vencoder.test",
+          "when": "editorHasSelection",
+          "group": "vencoder@4"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "vencoder.chat",
+          "when": "false"
+        },
+        {
+          "command": "vencoder.run",
+          "when": "false"
+        }
+      ]
+    },
+    "views": {
+      "vencoder-view-container": [
+        {
+          "id": "vencoder.chatView",
+          "name": "VenCoder Chat",
+          "icon": "media/icon.svg"
+        },
+        {
+          "id": "vencoder.collabView",
+          "name": "Collaboration",
+          "icon": "media/collab.svg"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "panel": [
+        {
+          "id": "vencoder-view-container",
+          "title": "VenCoder",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "snippets": [
+      {
+        "language": "typescript",
+        "path": "./snippets/typescript.json"
+      },
+      {
+        "language": "python",
+        "path": "./snippets/python.json"
+      }
+    ],
+    "configuration": {
+      "title": "VenCoder",
+      "properties": {
+        "vencoder.serverUrl": {
+          "type": "string",
+          "default": "http://localhost:8765",
+          "description": "VenCoder server URL"
+        },
+        "vencoder.model": {
+          "type": "string",
+          "default": "codellama:13b",
+          "description": "Default LLM model"
+        },
+        "vencoder.mode": {
+          "type": "string",
+          "enum": [
+            "agent",
+            "ask",
+            "plan"
+          ],
+          "default": "agent",
+          "description": "Default agent mode"
+        },
+        "vencoder.autoScroll": {
+          "type": "boolean",
+          "default": true,
+          "description": "Auto-scroll chat view"
+        },
+        "vencoder.streaming": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable streaming responses"
+        },
+        "vencoder.collabServer": {
+          "type": "string",
+          "default": "ws://localhost:8766",
+          "description": "Collaboration server URL"
+        },
+        "vencoder.maxTokens": {
+          "type": "number",
+          "default": 4096,
+          "description": "Maximum tokens per response"
+        },
+        "vencoder.temperature": {
+          "type": "number",
+          "default": 0.1,
+          "description": "Temperature for response generation"
+        },
+        "vencoder.showStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show VenCoder status in status bar"
+        },
+        "vencoder.keybindingsEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable VenCoder keyboard shortcuts"
+        }
+      }
+    },
+    "keybindings": [
+      {
+        "command": "vencoder.chat",
+        "key": "ctrl+shift+v",
+        "mac": "cmd+shift+v",
+        "when": "editorTextFocus",
+        "description": "Open VenCoder chat"
+      },
+      {
+        "command": "vencoder.explain",
+        "key": "ctrl+shift+e",
+        "mac": "cmd+shift+e",
+        "when": "editorHasSelection",
+        "description": "Explain selected code"
+      },
+      {
+        "command": "vencoder.refactor",
+        "key": "ctrl+shift+r",
+        "mac": "cmd+shift+r",
+        "when": "editorHasSelection",
+        "description": "Refactor selected code"
+      },
+      {
+        "command": "vencoder.fix",
+        "key": "ctrl+shift+f",
+        "mac": "cmd+shift+f",
+        "when": "editorHasSelection",
+        "description": "Fix selected code"
+      }
+    ],
+    "resourceLabelFormatters": [
+      {
+        "uriSchemes": [
+          "vencoder"
+        ],
+        "formats": [
+          {
+            "pattern": "^(//[^/]+)/(.*)$",
+            "workspaceLabel": "${2}"
+          }
+        ]
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "postinstall": "cd node_modules && npm install @types/vscode && cd ..",
+    "test": "npm run compile && node ./out/test/runTest.js"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "diff": "^5.1.0",
+    "ws": "^8.14.0"
+  },
+  "devDependencies": {
+    "@types/diff": "^5.0.0",
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.110.0",
+    "@types/ws": "^8.5.0",
+    "@vscode/test-electron": "^2.3.0",
+    "@vscode/vsce": "^2.21.0",
+    "typescript": "^5.3.0"
+  }
+}

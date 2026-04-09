@@ -1,0 +1,34 @@
+{
+  "hooks": [
+    {
+      "name": "format-after-edit",
+      "event": "after_edit",
+      "command": "ruff format {file}",
+      "condition": null,
+      "enabled": false,
+      "timeout": 30,
+      "description": "Automatically format files after editing",
+      "priority": 0
+    },
+    {
+      "name": "lint-before-commit",
+      "event": "before_commit",
+      "command": "ruff check .",
+      "condition": null,
+      "enabled": false,
+      "timeout": 60,
+      "description": "Run linter before committing",
+      "priority": 10
+    },
+    {
+      "name": "test-before-commit",
+      "event": "before_commit",
+      "command": "pytest -q 2>/dev/null || echo 'No tests found'",
+      "condition": null,
+      "enabled": false,
+      "timeout": 120,
+      "description": "Run tests before committing",
+      "priority": 5
+    }
+  ]
+}

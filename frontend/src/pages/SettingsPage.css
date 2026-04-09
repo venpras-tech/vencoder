@@ -1,0 +1,238 @@
+.settings-view {
+  padding: 32px 40px;
+}
+
+.settings-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  max-width: 56rem;
+}
+
+.settings-nav {
+  flex: 0 0 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 0;
+  border-right: 1px solid var(--border-color);
+  margin-right: 28px;
+  align-self: stretch;
+}
+
+.settings-nav-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s, color 0.15s;
+}
+
+.settings-nav-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.settings-nav-item.active {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.settings-panels {
+  flex: 1;
+  min-width: 0;
+  padding-bottom: 8px;
+}
+
+.settings-panel-heading {
+  margin: 0 0 18px;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.settings-title {
+  margin: 0 0 24px;
+  font-size: 1.375rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.settings-field {
+  margin-bottom: 20px;
+}
+
+.settings-label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+.settings-theme-options {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.settings-radio {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+.settings-radio input {
+  cursor: pointer;
+}
+
+.settings-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.settings-input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  background: var(--bg-sidebar);
+  color: var(--text-primary);
+  transition: border-color 0.15s;
+}
+
+.settings-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.settings-input::placeholder {
+  color: var(--text-muted);
+}
+
+.settings-hint {
+  margin: 6px 0 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.settings-hint-llm {
+  margin-bottom: 12px;
+}
+
+.settings-hint-mcp {
+  margin-bottom: 12px;
+  max-width: 56rem;
+  line-height: 1.5;
+}
+
+.settings-llm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 16px 24px;
+  margin-bottom: 12px;
+}
+
+.settings-llm-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-llm-label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.settings-input-num {
+  max-width: 140px;
+}
+
+.settings-llm-default {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.settings-mcp-row {
+  margin-bottom: 10px;
+}
+
+.settings-mcp-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.settings-mcp-check input {
+  width: 1rem;
+  height: 1rem;
+}
+
+.settings-mcp-textarea {
+  width: 100%;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-family: ui-monospace, "Cascadia Code", monospace;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  background: var(--bg-sidebar);
+  color: var(--text-primary);
+  resize: vertical;
+  min-height: 200px;
+}
+
+.settings-mcp-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.settings-mcp-status-line {
+  margin-top: 8px;
+  margin-bottom: 0;
+}
+
+@media (max-width: 700px) {
+  .settings-layout {
+    flex-direction: column;
+    max-width: none;
+  }
+
+  .settings-nav {
+    flex: none;
+    width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-right: none;
+    border-bottom: 1px solid var(--border-color);
+    margin-right: 0;
+    margin-bottom: 20px;
+    padding-bottom: 12px;
+  }
+
+  .settings-nav-item {
+    width: auto;
+  }
+}

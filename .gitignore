@@ -1,5 +1,6 @@
 dummy/
 node_modules/
+node_modules_d/
 .codec-agent/
 chroma_data/
 logs/

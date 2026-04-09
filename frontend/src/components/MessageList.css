@@ -1,0 +1,103 @@
+.messages {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.msg-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.msg-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.msg-time {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.msg {
+  padding: 12px 16px;
+  border-radius: 12px;
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.msg.user {
+  background: var(--accent);
+  color: #fff;
+  margin-left: 48px;
+}
+
+.msg.assistant {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.msg.streaming {
+  opacity: 0.8;
+}
+
+.msg .code-block {
+  margin: 12px 0;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.msg .code-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.msg .code-block-lang {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: lowercase;
+}
+
+.msg .code-block-copy {
+  padding: 4px 8px;
+  border: none;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.msg .code-block-copy:hover {
+  background: var(--border-color);
+  color: var(--text-primary);
+}
+
+.msg pre {
+  margin: 0;
+  padding: 12px;
+  background: var(--bg-sidebar);
+  overflow-x: auto;
+}
+
+.msg code {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.msg .md-text {
+  display: block;
+}

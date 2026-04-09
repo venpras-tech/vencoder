@@ -1,0 +1,30 @@
+{
+    "vencoder.explain": {
+        "prefix": "/explain",
+        "body": [
+            "Explain the selected code"
+        ],
+        "description": "Explain selected code with VenCoder"
+    },
+    "vencoder.refactor": {
+        "prefix": "/refactor",
+        "body": [
+            "Refactor the selected code"
+        ],
+        "description": "Refactor selected code with VenCoder"
+    },
+    "vencoder.fix": {
+        "prefix": "/fix",
+        "body": [
+            "Fix the selected code"
+        ],
+        "description": "Fix selected code with VenCoder"
+    },
+    "vencoder.test": {
+        "prefix": "/test",
+        "body": [
+            "Generate tests for the selected code"
+        ],
+        "description": "Generate tests with VenCoder"
+    }
+}

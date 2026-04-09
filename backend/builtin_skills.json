@@ -1,0 +1,172 @@
+{
+  "skills": [
+    {
+      "name": "run-tests",
+      "description": "Run the project test suite",
+      "command": "npm test 2>/dev/null || pytest 2>/dev/null || python -m pytest",
+      "triggers": ["run tests", "execute tests", "test the code", "run test suite", "test runner"],
+      "working_dir": null,
+      "env": {},
+      "timeout": 120,
+      "enabled": true,
+      "category": "testing",
+      "icon": "🧪"
+    },
+    {
+      "name": "lint-fix",
+      "description": "Run linter and auto-fix issues",
+      "command": "ruff check --fix . 2>/dev/null || eslint --fix 2>/dev/null || npm run lint 2>/dev/null",
+      "triggers": ["fix lint", "auto lint", "lint and fix", "format code"],
+      "working_dir": null,
+      "env": {},
+      "timeout": 60,
+      "enabled": true,
+      "category": "linting",
+      "icon": "✨"
+    },
+    {
+      "name": "build",
+      "description": "Build the project",
+      "command": "npm run build 2>/dev/null || cargo build 2>/dev/null || python setup.py build",
+      "triggers": ["build project", "compile", "make build"],
+      "working_dir": null,
+      "env": {},
+      "timeout": 180,
+      "enabled": true,
+      "category": "build",
+      "icon": "🔨"
+    },
+    {
+      "name": "deploy-staging",
+      "description": "Deploy to staging environment",
+      "command": "npm run deploy:staging 2>/dev/null || echo 'No staging deploy script found'",
+      "triggers": ["deploy staging", "deploy to staging", "staging deploy"],
+      "working_dir": null,
+      "env": {},
+      "timeout": 300,
+      "enabled": true,
+      "category": "deployment",
+      "icon": "🚀"
+    },
+    {
+      "name": "git-commit-conventional",
+      "description": "Commit with conventional commit format",
+      "command": "git add -A && git commit -m \"{message}\"",
+      "triggers": ["commit", "git commit"],
+      "working_dir": null,
+      "env": {},
+      "timeout": 30,
+      "enabled": true,
+      "category": "git",
+      "icon": "📝"
+    },
+    {
+      "name": "git-push",
+      "description": "Push to remote",
+      "command": "git push",
+      "triggers": ["push changes", "git push", "push to remote"],
+      "working_dir": null,
+      "env": {},
+      "timeout": 60,
+      "enabled": true,
+      "category": "git",
+      "icon": "⬆️"
+    },
+    {
+      "name": "security-scan",
+      "description": "Run security scan",
+      "command": "bandit -r . 2>/dev/null || safety check 2>/dev/null || echo 'No security scanner configured'",
+      "triggers": ["security scan", "vulnerability scan", "security check"],
+      "working_dir": null,
+      "env": {},
+      "timeout": 120,
+      "enabled": true,
+      "category": "security",
+      "icon": "🔒"
+    },
+    {
+      "name": "generate-changelog",
+      "description": "Generate changelog from git commits",
+      "command": "git log --oneline -20 > CHANGELOG.md",
+      "triggers": ["changelog", "generate changelog", "update changelog"],
+      "working_dir": null,
+      "env": {},
+      "timeout": 30,
+      "enabled": true,
+      "category": "documentation",
+      "icon": "📋"
+    },
+    {
+      "name": "typecheck",
+      "description": "Run type checker",
+      "command": "mypy . 2>/dev/null || tsc --noEmit 2>/dev/null || python -m mypy",
+      "triggers": ["type check", "run type checker", "typecheck"],
+      "working_dir": null,
+      "env": {},
+      "timeout": 120,
+      "enabled": true,
+      "category": "quality",
+      "icon": "📋"
+    },
+    {
+      "name": "clean-build",
+      "description": "Clean and rebuild",
+      "command": "rm -rf dist build *.egg-info 2>/dev/null; npm run build",
+      "triggers": ["clean build", "rebuild", "fresh build"],
+      "working_dir": null,
+      "env": {},
+      "timeout": 180,
+      "enabled": true,
+      "category": "build",
+      "icon": "🧹"
+    },
+    {
+      "name": "format",
+      "description": "Format code withPrettier",
+      "command": "npx prettier --write . 2>/dev/null || black . 2>/dev/null || ruff format .",
+      "triggers": ["format code", "prettier", "format files"],
+      "working_dir": null,
+      "env": {},
+      "timeout": 60,
+      "enabled": true,
+      "category": "formatting",
+      "icon": "🎨"
+    },
+    {
+      "name": "audit-dependencies",
+      "description": "Audit dependencies for vulnerabilities",
+      "command": "npm audit 2>/dev/null || pip-audit 2>/dev/null || cargo audit 2>/dev/null",
+      "triggers": ["audit", "security audit", "check dependencies"],
+      "working_dir": null,
+      "env": {},
+      "timeout": 120,
+      "enabled": true,
+      "category": "security",
+      "icon": "🔍"
+    },
+    {
+      "name": "docker-build",
+      "description": "Build Docker image",
+      "command": "docker build -t {app_name}:latest .",
+      "triggers": ["docker build", "build image", "dockerize"],
+      "working_dir": null,
+      "env": {},
+      "timeout": 300,
+      "enabled": true,
+      "category": "docker",
+      "icon": "🐳"
+    },
+    {
+      "name": "migrate",
+      "description": "Run database migrations",
+      "command": "alembic upgrade head 2>/dev/null || python manage.py migrate 2>/dev/null || npx prisma migrate deploy 2>/dev/null",
+      "triggers": ["migrate", "run migrations", "db migrate"],
+      "working_dir": null,
+      "env": {},
+      "timeout": 60,
+      "enabled": true,
+      "category": "database",
+      "icon": "🗄️"
+    }
+  ]
+}
