@@ -1,22 +1,24 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "AI Dev",
-  "version": "1.0.0",
-  "identifier": "com.aidev.app",
+  "productName": "VenCoder",
+  "version": "2.0.0",
+  "identifier": "com.vencoder.app",
   "build": {
-    "beforeDevCommand": "npx serve electron -l 1420",
-    "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "node scripts/copy-webview.js",
-    "frontendDist": "../dist-webview"
+    "beforeDevCommand": "npm run dev --prefix electron",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "npm run build --prefix electron",
+    "frontendDist": "../electron/dist"
   },
   "app": {
     "withGlobalTauri": true,
     "windows": [
       {
         "label": "main",
-        "title": "AI Dev",
-        "width": 1000,
-        "height": 720,
+        "title": "VenCoder",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 600,
         "resizable": true,
         "devtools": true
       }
@@ -35,11 +37,11 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "longDescription": "AI coding assistant with Ollama, semantic index, and file tools",
-    "shortDescription": "AI Dev",
+    "longDescription": "AI coding assistant with Memory, Skills, Hooks, Plugins, Checkpoints, Git Workflow, Type Checking, Linting, Security Scanning, Code Review, Session Management, and Collaboration features",
+    "shortDescription": "VenCoder AI Coding Assistant",
     "resources": ["../backend", "../python-runtime"],
     "category": "DeveloperTool",
-    "copyright": "",
-    "license": null
+    "copyright": "Copyright 2024",
+    "license": "MIT"
   }
 }

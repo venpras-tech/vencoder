@@ -2636,6 +2636,408 @@ if (connectingRetry) {
   });
 }
 
+// Memory Page
+async function loadMemoryPage() {
+  try {
+    const r = await fetch(baseUrl + '/memory/content');
+    if (r.ok) {
+      const data = await r.json();
+      const memoryContent = document.getElementById('memory-content');
+      const memoryConventions = document.getElementById('memory-conventions');
+      if (memoryContent) memoryContent.value = data.memory || '';
+      if (memoryConventions) memoryConventions.value = data.conventions || '';
+    }
+    const statsR = await fetch(baseUrl + '/memory');
+    if (statsR.ok) {
+      const stats = await statsR.json();
+      const memSize = document.getElementById('memory-size');
+      const memLearnings = document.getElementById('memory-learnings');
+      if (memSize) memSize.textContent = stats.memory_size || '0 KB';
+      if (memLearnings) memLearnings.textContent = stats.learning_count || '0';
+    }
+  } catch (e) {
+    addActivity('Failed to load memory: ' + e.message, 'error');
+  }
+}
+
+document.getElementById('btn-memory-save')?.addEventListener('click', async () => {
+  const content = document.getElementById('memory-content')?.value || '';
+  try {
+    await fetch(baseUrl + '/memory', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ memory: content })
+    });
+    addActivity('Memory saved', 'status');
+  } catch (e) {
+    addActivity('Failed to save memory: ' + e.message, 'error');
+  }
+});
+
+document.getElementById('btn-memory-reload')?.addEventListener('click', loadMemoryPage);
+
+document.getElementById('btn-memory-save-conventions')?.addEventListener('click', async () => {
+  const content = document.getElementById('memory-conventions')?.value || '';
+  try {
+    await fetch(baseUrl + '/memory', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ conventions: content })
+    });
+    addActivity('Conventions saved', 'status');
+  } catch (e) {
+    addActivity('Failed to save conventions: ' + e.message, 'error');
+  }
+});
+
+// Skills Page
+async function loadSkillsPage() {
+  const list = document.getElementById('skills-list');
+  if (!list) return;
+  try {
+    const r = await fetch(baseUrl + '/skills');
+    if (!r.ok) throw new Error(r.statusText);
+    const data = await r.json();
+    const skills = data.skills || [];
+    if (skills.length === 0) {
+      list.innerHTML = '<div class="feature-empty">No skills configured. Create one to get started.</div>';
+      return;
+    }
+    list.innerHTML = skills.map(s => `
+      <div class="skill-card" data-name="${escapeHtml(s.name)}">
+        <div class="skill-header">
+          <h4>${escapeHtml(s.name)}</h4>
+          <span class="skill-badge">${escapeHtml(s.category || 'custom')}</span>
+        </div>
+        <p class="skill-desc">${escapeHtml(s.description || 'No description')}</p>
+        <div class="skill-triggers">
+          ${(s.triggers || []).map(t => `<span class="trigger-tag">${escapeHtml(t)}</span>`).join('')}
+        </div>
+        <div class="skill-actions">
+          <button class="btn-skill-action" data-action="run" data-name="${escapeHtml(s.name)}">Run</button>
+          <button class="btn-skill-action" data-action="edit" data-name="${escapeHtml(s.name)}">Edit</button>
+          <button class="btn-skill-action btn-danger" data-action="delete" data-name="${escapeHtml(s.name)}">Delete</button>
+        </div>
+      </div>
+    `).join('');
+    list.querySelectorAll('.btn-skill-action').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const action = btn.dataset.action;
+        const name = btn.dataset.name;
+        if (action === 'run') {
+          await fetch(baseUrl + '/skills/' + encodeURIComponent(name) + '/run', { method: 'POST' });
+          addActivity('Skill "' + name + '" executed', 'status');
+        } else if (action === 'delete') {
+          await fetch(baseUrl + '/skills/' + encodeURIComponent(name), { method: 'DELETE' });
+          loadSkillsPage();
+        }
+      });
+    });
+  } catch (e) {
+    list.innerHTML = '<div class="feature-error">Failed to load skills: ' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+document.getElementById('btn-skills-refresh')?.addEventListener('click', loadSkillsPage);
+
+document.getElementById('btn-skills-create')?.addEventListener('click', async () => {
+  const result = await showContextPrompt({
+    title: 'Create Skill',
+    label1: 'Skill name',
+    placeholder1: 'my-custom-skill',
+    label2: 'Command to execute',
+    placeholder2: 'npm run test'
+  });
+  if (result == null || !result.value1) return;
+  try {
+    await fetch(baseUrl + '/skills', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: result.value1,
+        command: result.value2 || '',
+        description: 'Custom skill'
+      })
+    });
+    loadSkillsPage();
+  } catch (e) {
+    addActivity('Failed to create skill: ' + e.message, 'error');
+  }
+});
+
+// Hooks Page
+async function loadHooksPage() {
+  const list = document.getElementById('hooks-list');
+  if (!list) return;
+  try {
+    const r = await fetch(baseUrl + '/hooks');
+    if (!r.ok) throw new Error(r.statusText);
+    const data = await r.json();
+    const hooks = data.hooks || [];
+    if (hooks.length === 0) {
+      list.innerHTML = '<div class="feature-empty">No hooks configured.</div>';
+      return;
+    }
+    list.innerHTML = hooks.map(h => `
+      <div class="hook-card" data-name="${escapeHtml(h.name)}">
+        <div class="hook-header">
+          <h4>${escapeHtml(h.name)}</h4>
+          <span class="hook-badge ${h.enabled ? 'enabled' : 'disabled'}">${h.enabled ? 'Enabled' : 'Disabled'}</span>
+        </div>
+        <p class="hook-desc">${escapeHtml(h.description || 'No description')}</p>
+        <div class="hook-events">
+          ${(h.events || []).map(e => `<span class="event-tag">${escapeHtml(e)}</span>`).join('')}
+        </div>
+        <div class="hook-actions">
+          <button class="btn-hook-action" data-action="toggle" data-name="${escapeHtml(h.name)}">${h.enabled ? 'Disable' : 'Enable'}</button>
+          <button class="btn-hook-action btn-danger" data-action="delete" data-name="${escapeHtml(h.name)}">Delete</button>
+        </div>
+      </div>
+    `).join('');
+    list.querySelectorAll('.btn-hook-action').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const action = btn.dataset.action;
+        const name = btn.dataset.name;
+        if (action === 'toggle') {
+          const isEnabled = !btn.textContent.includes('Enable');
+          const endpoint = isEnabled ? 'enable' : 'disable';
+          await fetch(baseUrl + '/hooks/' + encodeURIComponent(name) + '/' + endpoint, { method: 'POST' });
+          loadHooksPage();
+        } else if (action === 'delete') {
+          await fetch(baseUrl + '/hooks/' + encodeURIComponent(name), { method: 'DELETE' });
+          loadHooksPage();
+        }
+      });
+    });
+  } catch (e) {
+    list.innerHTML = '<div class="feature-error">Failed to load hooks: ' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+document.getElementById('btn-hooks-refresh')?.addEventListener('click', loadHooksPage);
+
+document.getElementById('btn-hooks-create')?.addEventListener('click', async () => {
+  const result = await showContextPrompt({
+    title: 'Create Hook',
+    label1: 'Hook name',
+    placeholder1: 'my-pre-commit-hook',
+    label2: 'Command to execute',
+    placeholder2: 'npm run lint'
+  });
+  if (result == null || !result.value1) return;
+  try {
+    await fetch(baseUrl + '/hooks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: result.value1,
+        command: result.value2 || '',
+        description: 'Custom hook',
+        events: ['before:git-commit']
+      })
+    });
+    loadHooksPage();
+  } catch (e) {
+    addActivity('Failed to create hook: ' + e.message, 'error');
+  }
+});
+
+// Plugins Page
+async function loadPluginsPage() {
+  const list = document.getElementById('plugins-list');
+  if (!list) return;
+  try {
+    const r = await fetch(baseUrl + '/plugins');
+    if (!r.ok) throw new Error(r.statusText);
+    const data = await r.json();
+    const plugins = data.plugins || [];
+    if (plugins.length === 0) {
+      list.innerHTML = '<div class="feature-empty">No plugins installed.</div>';
+      return;
+    }
+    list.innerHTML = plugins.map(p => `
+      <div class="plugin-card" data-name="${escapeHtml(p.name)}">
+        <div class="plugin-header">
+          <h4>${escapeHtml(p.name)}</h4>
+          <span class="plugin-version">v${escapeHtml(p.version || '1.0.0')}</span>
+        </div>
+        <p class="plugin-desc">${escapeHtml(p.description || 'No description')}</p>
+        <div class="plugin-hooks">
+          ${(p.hooks || []).map(h => `<span class="hook-tag">${escapeHtml(h)}</span>`).join('')}
+        </div>
+        <div class="plugin-actions">
+          <button class="btn-plugin-action" data-action="toggle" data-name="${escapeHtml(p.name)}">${p.enabled ? 'Disable' : 'Enable'}</button>
+        </div>
+      </div>
+    `).join('');
+    list.querySelectorAll('.btn-plugin-action').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const action = btn.dataset.action;
+        const name = btn.dataset.name;
+        if (action === 'toggle') {
+          const isEnabled = !btn.textContent.includes('Enable');
+          const endpoint = isEnabled ? 'enable' : 'disable';
+          await fetch(baseUrl + '/plugins/' + encodeURIComponent(name) + '/' + endpoint, { method: 'POST' });
+          loadPluginsPage();
+        }
+      });
+    });
+  } catch (e) {
+    list.innerHTML = '<div class="feature-error">Failed to load plugins: ' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+document.getElementById('btn-plugins-refresh')?.addEventListener('click', loadPluginsPage);
+
+document.getElementById('btn-plugins-create')?.addEventListener('click', () => {
+  addActivity('Plugin creation: Create a .py file in .vencoder/plugins/', 'status');
+});
+
+// Permissions Page
+async function loadPermissionsPage() {
+  try {
+    const r = await fetch(baseUrl + '/permissions');
+    if (!r.ok) throw new Error(r.statusText);
+    const data = await r.json();
+    const mode = data.permission_mode || 'ask';
+    document.querySelectorAll('input[name="perm-mode"]').forEach(radio => {
+      radio.checked = radio.value === mode;
+    });
+    const allowed = document.getElementById('permissions-allowed');
+    if (allowed) allowed.value = (data.allowed_commands || []).join('\n');
+  } catch (e) {
+    addActivity('Failed to load permissions: ' + e.message, 'error');
+  }
+}
+
+document.getElementById('btn-permissions-save')?.addEventListener('click', async () => {
+  const mode = document.querySelector('input[name="perm-mode"]:checked')?.value || 'ask';
+  try {
+    await fetch(baseUrl + '/permissions/mode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode })
+    });
+    addActivity('Permission mode saved: ' + mode, 'status');
+  } catch (e) {
+    addActivity('Failed to save permissions: ' + e.message, 'error');
+  }
+});
+
+document.getElementById('btn-permissions-cycle')?.addEventListener('click', async () => {
+  try {
+    await fetch(baseUrl + '/permissions/cycle', { method: 'POST' });
+    loadPermissionsPage();
+    addActivity('Permission mode cycled', 'status');
+  } catch (e) {
+    addActivity('Failed to cycle permissions: ' + e.message, 'error');
+  }
+});
+
+document.getElementById('btn-permissions-save-allowed')?.addEventListener('click', async () => {
+  const allowedText = document.getElementById('permissions-allowed')?.value || '';
+  const commands = allowedText.split('\n').map(c => c.trim()).filter(c => c);
+  try {
+    for (const cmd of commands) {
+      await fetch(baseUrl + '/permissions/allow', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command: cmd })
+      });
+    }
+    addActivity('Allowed commands saved', 'status');
+  } catch (e) {
+    addActivity('Failed to save allowed commands: ' + e.message, 'error');
+  }
+});
+
+// Checkpoints Page
+async function loadCheckpointsPage() {
+  const list = document.getElementById('checkpoints-list');
+  if (!list) return;
+  try {
+    const r = await fetch(baseUrl + '/checkpoint');
+    if (!r.ok) throw new Error(r.statusText);
+    const data = await r.json();
+    const checkpoints = data.checkpoints || [];
+    if (checkpoints.length === 0) {
+      list.innerHTML = '<div class="feature-empty">No checkpoints available.</div>';
+      return;
+    }
+    list.innerHTML = checkpoints.map(c => `
+      <div class="checkpoint-card" data-id="${escapeHtml(c.id)}">
+        <div class="checkpoint-header">
+          <h4>${escapeHtml(c.file_path || 'Unknown file')}</h4>
+          <span class="checkpoint-time">${escapeHtml(new Date(c.timestamp).toLocaleString())}</span>
+        </div>
+        <p class="checkpoint-action">${escapeHtml(c.action || 'edit')}</p>
+        <div class="checkpoint-actions">
+          <button class="btn-checkpoint-action" data-action="undo" data-id="${escapeHtml(c.id)}">Restore</button>
+        </div>
+      </div>
+    `).join('');
+    list.querySelectorAll('.btn-checkpoint-action').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const action = btn.dataset.action;
+        const id = btn.dataset.id;
+        if (action === 'undo') {
+          await fetch(baseUrl + '/checkpoint/undo?checkpoint_id=' + encodeURIComponent(id), { method: 'POST' });
+          loadCheckpointsPage();
+          addActivity('Checkpoint restored', 'status');
+        }
+      });
+    });
+  } catch (e) {
+    list.innerHTML = '<div class="feature-error">Failed to load checkpoints: ' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+document.getElementById('btn-checkpoints-refresh')?.addEventListener('click', loadCheckpointsPage);
+
+document.getElementById('btn-checkpoints-undo')?.addEventListener('click', async () => {
+  try {
+    await fetch(baseUrl + '/checkpoint/undo', { method: 'POST' });
+    loadCheckpointsPage();
+    addActivity('Last checkpoint undone', 'status');
+  } catch (e) {
+    addActivity('Failed to undo checkpoint: ' + e.message, 'error');
+  }
+});
+
+document.getElementById('btn-checkpoints-clear')?.addEventListener('click', async () => {
+  try {
+    await fetch(baseUrl + '/checkpoint/session', { method: 'DELETE' });
+    loadCheckpointsPage();
+    addActivity('Checkpoints cleared', 'status');
+  } catch (e) {
+    addActivity('Failed to clear checkpoints: ' + e.message, 'error');
+  }
+});
+
+// Update setPage to handle new pages
+const originalSetPage = setPage;
+setPage = function(page) {
+  originalSetPage(page);
+  if (page === 'memory') loadMemoryPage();
+  else if (page === 'skills') loadSkillsPage();
+  else if (page === 'hooks') loadHooksPage();
+  else if (page === 'plugins') loadPluginsPage();
+  else if (page === 'permissions') loadPermissionsPage();
+  else if (page === 'checkpoints') loadCheckpointsPage();
+};
+
+// Update keyboard shortcuts to include more pages
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key >= '1' && e.key <= '9' && !e.altKey && !e.shiftKey) {
+    const pages = ['home', 'chat', 'project', 'models', 'memory', 'skills', 'hooks', 'plugins', 'permissions'];
+    const idx = parseInt(e.key, 10) - 1;
+    if (pages[idx]) {
+      e.preventDefault();
+      setPage(pages[idx]);
+    }
+  }
+});
+
 async function initTheme() {
   try {
     let theme = 'system';

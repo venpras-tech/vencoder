@@ -1265,5 +1265,1151 @@ def get_llm_settings():
     }
 
 
+# ============================================================================
+# Memory System Endpoints
+# ============================================================================
+
+@app.get("/memory")
+def get_memory_context():
+    """Get the current memory context for the workspace."""
+    try:
+        from memory import MemoryManager
+        mm = MemoryManager(WORKSPACE_ROOT)
+        return {
+            "context": mm.get_session_context(),
+            "stats": mm.get_memory_stats(),
+            "settings": mm.get_settings(),
+        }
+    except Exception as e:
+        log.exception("get_memory_context failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/memory/content")
+def get_memory_content():
+    """Get the raw memory file content."""
+    try:
+        from memory import MemoryManager
+        mm = MemoryManager(WORKSPACE_ROOT)
+        return {
+            "memory": mm.get_memory_content(),
+            "conventions": mm.get_project_conventions(),
+            "auto_entries": mm.get_all_auto_entries(),
+        }
+    except Exception as e:
+        log.exception("get_memory_content failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class MemoryUpdateRequest(BaseModel):
+    memory: Optional[str] = None
+    conventions: Optional[str] = None
+    append_to_section: Optional[Dict[str, str]] = None
+
+
+@app.post("/memory")
+def update_memory(req: MemoryUpdateRequest):
+    """Update memory content."""
+    try:
+        from memory import MemoryManager
+        mm = MemoryManager(WORKSPACE_ROOT)
+        if req.memory is not None:
+            mm.set_memory_content(req.memory)
+        if req.conventions is not None:
+            mm.set_project_conventions(req.conventions)
+        if req.append_to_section:
+            for section, content in req.append_to_section.items():
+                mm.append_to_memory(section, content)
+        return {"ok": True}
+    except Exception as e:
+        log.exception("update_memory failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/memory/learn")
+def learn_memory(category: str, content: str, source: str = "auto"):
+    """Add a learning entry to auto-memory."""
+    try:
+        from memory import MemoryManager
+        mm = MemoryManager(WORKSPACE_ROOT)
+        mm.save_learning(category, content, source)
+        return {"ok": True}
+    except Exception as e:
+        log.exception("learn_memory failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/memory/auto")
+def clear_auto_memory():
+    """Clear auto-memory entries."""
+    try:
+        from memory import MemoryManager
+        mm = MemoryManager(WORKSPACE_ROOT)
+        mm.clear_auto_memory()
+        return {"ok": True}
+    except Exception as e:
+        log.exception("clear_auto_memory failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# Checkpoint/Undo System Endpoints
+# ============================================================================
+
+class CheckpointCreateRequest(BaseModel):
+    file_path: str
+    action: str = "edit"
+
+
+@app.post("/checkpoint")
+def create_checkpoint(req: CheckpointCreateRequest):
+    """Create a checkpoint before file modification."""
+    try:
+        from checkpoint import CheckpointManager
+        from pathlib import Path
+        cm = CheckpointManager(WORKSPACE_ROOT)
+        cp = cm.create_checkpoint(Path(req.file_path), req.action)
+        if cp:
+            return {"ok": True, "checkpoint": {"id": cp.id, "file_path": cp.file_path, "created_at": cp.created_at}}
+        return {"ok": False, "error": "Could not create checkpoint"}
+    except Exception as e:
+        log.exception("create_checkpoint failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/checkpoint/undo")
+def undo_checkpoint(checkpoint_id: Optional[str] = None):
+    """Undo to a checkpoint or the last checkpoint."""
+    try:
+        from checkpoint import CheckpointManager
+        cm = CheckpointManager(WORKSPACE_ROOT)
+        if checkpoint_id:
+            success = cm.undo_to_checkpoint(checkpoint_id)
+        else:
+            success = cm.undo_last()
+        return {"ok": success}
+    except Exception as e:
+        log.exception("undo_checkpoint failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/checkpoint")
+def list_checkpoints(file_path: Optional[str] = None):
+    """List checkpoints for current session."""
+    try:
+        from checkpoint import CheckpointManager
+        from pathlib import Path
+        cm = CheckpointManager(WORKSPACE_ROOT)
+        checkpoints = cm.list_checkpoints(Path(file_path) if file_path else None)
+        return {
+            "checkpoints": [
+                {"id": cp.id, "file_path": cp.file_path, "created_at": cp.created_at, "action": cp.action, "restored": cp.restored}
+                for cp in checkpoints
+            ],
+            "stats": cm.get_stats(),
+        }
+    except Exception as e:
+        log.exception("list_checkpoints failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/checkpoint/{checkpoint_id}")
+def get_checkpoint_info(checkpoint_id: str):
+    """Get detailed information about a checkpoint."""
+    try:
+        from checkpoint import CheckpointManager
+        cm = CheckpointManager(WORKSPACE_ROOT)
+        diff = cm.get_checkpoint_diff(checkpoint_id)
+        if diff:
+            return diff
+        return {"error": "Checkpoint not found"}
+    except Exception as e:
+        log.exception("get_checkpoint_info failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/checkpoint/session/{session_id}")
+def set_checkpoint_session(session_id: str):
+    """Set the active checkpoint session."""
+    try:
+        from checkpoint import CheckpointManager
+        cm = CheckpointManager(WORKSPACE_ROOT)
+        cm.set_session_id(session_id)
+        return {"ok": True, "session_id": session_id}
+    except Exception as e:
+        log.exception("set_checkpoint_session failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/checkpoint/session")
+def clear_session_checkpoints():
+    """Clear all checkpoints for current session."""
+    try:
+        from checkpoint import CheckpointManager
+        cm = CheckpointManager(WORKSPACE_ROOT)
+        cm.clear_session_checkpoints()
+        return {"ok": True}
+    except Exception as e:
+        log.exception("clear_session_checkpoints failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# Permission System Endpoints
+# ============================================================================
+
+@app.get("/permissions")
+def get_permissions():
+    """Get current permission settings."""
+    try:
+        from permissions import PermissionManager
+        pm = PermissionManager(WORKSPACE_ROOT / ".vencoder" / "permissions.json")
+        return pm.get_permission_summary()
+    except Exception as e:
+        log.exception("get_permissions failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class PermissionModeUpdate(BaseModel):
+    mode: str
+
+
+@app.post("/permissions/mode")
+def update_permission_mode(req: PermissionModeUpdate):
+    """Update the permission mode."""
+    try:
+        from permissions import PermissionManager, PermissionMode
+        pm = PermissionManager(WORKSPACE_ROOT / ".vencoder" / "permissions.json")
+        try:
+            mode = PermissionMode(req.mode)
+        except ValueError:
+            return {"error": f"Invalid mode: {req.mode}. Valid: ask, auto_edit, plan, auto"}
+        pm.set_mode(mode)
+        return {"ok": True, "mode": mode.value}
+    except Exception as e:
+        log.exception("update_permission_mode failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/permissions/cycle")
+def cycle_permission_mode():
+    """Cycle to the next permission mode."""
+    try:
+        from permissions import PermissionManager
+        pm = PermissionManager(WORKSPACE_ROOT / ".vencoder" / "permissions.json")
+        new_mode = pm.cycle_mode()
+        return {"ok": True, "mode": new_mode.value}
+    except Exception as e:
+        log.exception("cycle_permission_mode failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class CommandPermissionRequest(BaseModel):
+    command: str
+
+
+@app.post("/permissions/allow")
+def allow_command(req: CommandPermissionRequest):
+    """Allow a specific command."""
+    try:
+        from permissions import PermissionManager
+        pm = PermissionManager(WORKSPACE_ROOT / ".vencoder" / "permissions.json")
+        pm.allow_command(req.command)
+        return {"ok": True, "command": req.command}
+    except Exception as e:
+        log.exception("allow_command failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/permissions/deny")
+def deny_command(req: CommandPermissionRequest):
+    """Deny a specific command."""
+    try:
+        from permissions import PermissionManager
+        pm = PermissionManager(WORKSPACE_ROOT / ".vencoder" / "permissions.json")
+        pm.deny_command(req.command)
+        return {"ok": True, "command": req.command}
+    except Exception as e:
+        log.exception("deny_command failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/permissions/reset")
+def reset_permissions():
+    """Reset permissions to defaults."""
+    try:
+        from permissions import PermissionManager
+        pm = PermissionManager(WORKSPACE_ROOT / ".vencoder" / "permissions.json")
+        pm.reset_to_defaults()
+        return {"ok": True}
+    except Exception as e:
+        log.exception("reset_permissions failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/permissions/validate/command")
+def validate_command(command: str):
+    """Validate a shell command against permission rules."""
+    try:
+        from permissions import PermissionManager
+        pm = PermissionManager(WORKSPACE_ROOT / ".vencoder" / "permissions.json")
+        is_valid, reason = pm.validate_shell_command(command)
+        return {"valid": is_valid, "reason": reason}
+    except Exception as e:
+        log.exception("validate_command failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# Enhanced Git Endpoints
+# ============================================================================
+
+@app.get("/git/branch")
+def get_git_branch():
+    """Get current git branch."""
+    try:
+        from tools.git_tools import git_branch, git_current_branch
+        branch = git_current_branch()
+        branches = git_branch()
+        return {"current": branch, "branches": branches}
+    except Exception as e:
+        log.exception("get_git_branch failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/git/log")
+def get_git_log(n: int = 10, file_path: Optional[str] = None):
+    """Get git commit log."""
+    try:
+        from tools.git_tools import git_log
+        log_output = git_log(n=n, file_path=file_path)
+        return {"log": log_output}
+    except Exception as e:
+        log.exception("get_git_log failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/git/commit")
+def git_commit(message: str, amend: bool = False):
+    """Commit staged changes."""
+    try:
+        from tools.git_tools import git_commit as do_commit
+        result = do_commit(message=message, amend=amend)
+        return {"result": result}
+    except Exception as e:
+        log.exception("git_commit failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/git/commit-all")
+def git_commit_all(message: str, amend: bool = False):
+    """Commit all changes."""
+    try:
+        from tools.git_tools import git_commit_all as do_commit
+        result = do_commit(message=message, amend=amend)
+        return {"result": result}
+    except Exception as e:
+        log.exception("git_commit_all failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/git/create-branch")
+def git_create_branch(branch_name: str, base: str = "HEAD"):
+    """Create a new git branch."""
+    try:
+        from tools.git_tools import git_create_branch as do_create
+        result = do_create(branch_name=branch_name, base=base)
+        return {"result": result}
+    except Exception as e:
+        log.exception("git_create_branch failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/git/switch-branch")
+def git_switch_branch(branch_name: str):
+    """Switch to a git branch."""
+    try:
+        from tools.git_tools import git_switch_branch as do_switch
+        result = do_switch(branch_name=branch_name)
+        return {"result": result}
+    except Exception as e:
+        log.exception("git_switch_branch failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/git/stash")
+def git_stash_changes(message: Optional[str] = None):
+    """Stash current changes."""
+    try:
+        from tools.git_tools import git_stash as do_stash
+        result = do_stash(message=message)
+        return {"result": result}
+    except Exception as e:
+        log.exception("git_stash failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/git/stash-pop")
+def git_stash_pop():
+    """Pop the most recent stash."""
+    try:
+        from tools.git_tools import git_stash_pop as do_pop
+        result = do_pop()
+        return {"result": result}
+    except Exception as e:
+        log.exception("git_stash_pop failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/git/undo-commit")
+def git_undo_commit(keep_changes: bool = True):
+    """Undo the last commit."""
+    try:
+        from tools.git_tools import git_undo_last_commit
+        result = git_undo_last_commit(keep_changes=keep_changes)
+        return {"result": result}
+    except Exception as e:
+        log.exception("git_undo_commit failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/git/remote")
+def get_git_remote():
+    """Get git remotes."""
+    try:
+        from tools.git_tools import git_remote
+        result = git_remote()
+        return {"remotes": result}
+    except Exception as e:
+        log.exception("get_git_remote failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/git/push")
+def git_push(force: bool = False, set_upstream: bool = False):
+    """Push to remote."""
+    try:
+        from tools.git_tools import git_push as do_push
+        result = do_push(force=force, set_upstream=set_upstream)
+        return {"result": result}
+    except Exception as e:
+        log.exception("git_push failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/git/pull")
+def git_pull(rebase: bool = False):
+    """Pull from remote."""
+    try:
+        from tools.git_tools import git_pull as do_pull
+        result = do_pull(rebase=rebase)
+        return {"result": result}
+    except Exception as e:
+        log.exception("git_pull failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/git/changed-files")
+def git_changed_files(ref1: str = "HEAD", ref2: str = ""):
+    """List files changed between commits."""
+    try:
+        from tools.git_tools import git_changed_files as do_list
+        result = do_list(ref1=ref1, ref2=ref2)
+        return {"files": result}
+    except Exception as e:
+        log.exception("git_changed_files failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/git/short-status")
+def git_short_status():
+    """Get compact git status."""
+    try:
+        from tools.git_tools import git_short_status as do_status
+        result = do_status()
+        return {"status": result}
+    except Exception as e:
+        log.exception("git_short_status failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# Code Quality Endpoints
+# ============================================================================
+
+@app.get("/lint/linters")
+def get_available_linters():
+    """Get list of available linters."""
+    try:
+        from lint_fixer import LintFixer
+        fixer = LintFixer(WORKSPACE_ROOT)
+        available = fixer.get_available_linters()
+        return {"linters": available}
+    except Exception as e:
+        log.exception("get_available_linters failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/lint/check")
+def lint_check(file_path: str, linter: Optional[str] = None):
+    """Lint a file."""
+    try:
+        from lint_fixer import LintFixer
+        fixer = LintFixer(WORKSPACE_ROOT)
+        result = fixer.lint_file(file_path, linter)
+        return {
+            "passed": result.passed,
+            "issues": len(result.issues),
+            "output": result.output,
+        }
+    except Exception as e:
+        log.exception("lint_check failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/lint/fix")
+def lint_fix(file_path: str, linter: Optional[str] = None):
+    """Auto-fix lint issues."""
+    try:
+        from lint_fixer import LintFixer
+        fixer = LintFixer(WORKSPACE_ROOT)
+        fixed, output = fixer.fix_file(file_path, linter)
+        return {"fixed": fixed, "output": output}
+    except Exception as e:
+        log.exception("lint_fix failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/typecheck/checkers")
+def get_available_checkers():
+    """Get list of available type checkers."""
+    try:
+        from type_checker import TypeChecker
+        checker = TypeChecker(WORKSPACE_ROOT)
+        available = checker.get_available_checkers()
+        return {"checkers": available}
+    except Exception as e:
+        log.exception("get_available_checkers failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/typecheck/check")
+def typecheck_file(file_path: str, language: Optional[str] = None):
+    """Type check a file."""
+    try:
+        from type_checker import TypeChecker
+        checker = TypeChecker(WORKSPACE_ROOT)
+        result = checker.check_file(file_path, language)
+        return {
+            "passed": result.passed,
+            "errors": len(result.errors),
+            "output": result.output,
+        }
+    except Exception as e:
+        log.exception("typecheck_file failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/typecheck/project")
+def typecheck_project(language: Optional[str] = None):
+    """Type check the entire project."""
+    try:
+        from type_checker import TypeChecker
+        checker = TypeChecker(WORKSPACE_ROOT)
+        results = checker.check_project(language)
+        return {
+            "results": [
+                {"passed": r.passed, "errors": len(r.errors), "command": r.command}
+                for r in results
+            ]
+        }
+    except Exception as e:
+        log.exception("typecheck_project failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/security/scan")
+def security_scan(file_path: Optional[str] = None):
+    """Scan for security vulnerabilities."""
+    try:
+        from security_scanner import SecurityScanner
+        scanner = SecurityScanner(WORKSPACE_ROOT)
+        if file_path:
+            issues = scanner.scan_file(file_path)
+            summary = scanner.get_summary(
+                type('ScanResult', (), {
+                    'passed': len(issues) == 0,
+                    'issues': issues,
+                    'files_scanned': 1,
+                    'scan_time': 0
+                })()
+            )
+        else:
+            result = scanner.scan_project()
+            summary = scanner.get_summary(result)
+        return summary
+    except Exception as e:
+        log.exception("security_scan failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/review/file")
+def review_file(file_path: str):
+    """Review a file for code quality."""
+    try:
+        from code_review import CodeReviewer
+        reviewer = CodeReviewer(WORKSPACE_ROOT)
+        result = reviewer.review_file(file_path)
+        return {
+            "file": result.file,
+            "score": result.score,
+            "summary": result.summary,
+            "issues": [
+                {
+                    "file": i.file,
+                    "line": i.line,
+                    "category": i.category,
+                    "severity": i.severity,
+                    "title": i.title,
+                    "description": i.description,
+                    "suggestion": i.suggestion,
+                }
+                for i in result.issues
+            ],
+        }
+    except Exception as e:
+        log.exception("review_file failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/review/project")
+def review_project():
+    """Review the entire project for code quality."""
+    try:
+        from code_review import CodeReviewer
+        reviewer = CodeReviewer(WORKSPACE_ROOT)
+        summary = reviewer.review_project()
+        return summary
+    except Exception as e:
+        log.exception("review_project failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/checks/all")
+def run_all_checks(file_path: Optional[str] = None):
+    """Run all code quality checks."""
+    try:
+        from type_checker import TypeChecker
+        from lint_fixer import LintFixer
+        from security_scanner import SecurityScanner
+        from code_review import CodeReviewer
+
+        results = {}
+
+        checker = TypeChecker(WORKSPACE_ROOT)
+        if file_path:
+            r = checker.check_file(file_path)
+            results["typecheck"] = {"passed": r.passed, "errors": len(r.errors)}
+        else:
+            rs = checker.check_project()
+            results["typecheck"] = {
+                "passed": all(r.passed for r in rs),
+                "errors": sum(len(r.errors) for r in rs),
+            }
+
+        fixer = LintFixer(WORKSPACE_ROOT)
+        if file_path:
+            r = fixer.lint_file(file_path)
+            results["lint"] = {"passed": r.passed, "issues": len(r.issues)}
+        else:
+            rs = fixer.lint_project()
+            results["lint"] = {
+                "passed": all(r.passed for r in rs),
+                "issues": sum(len(r.issues) for r in rs),
+            }
+
+        scanner = SecurityScanner(WORKSPACE_ROOT)
+        if file_path:
+            issues = scanner.scan_file(file_path)
+            results["security"] = {"passed": len(issues) == 0, "issues": len(issues)}
+        else:
+            r = scanner.scan_project()
+            results["security"] = {"passed": r.passed, "issues": len(r.issues)}
+
+        reviewer = CodeReviewer(WORKSPACE_ROOT)
+        if file_path:
+            r = reviewer.review_file(file_path)
+            results["review"] = {"score": r.score, "issues": len(r.issues)}
+        else:
+            s = reviewer.review_project()
+            results["review"] = {"score": s["average_score"], "issues": s["total_issues"]}
+
+        return results
+    except Exception as e:
+        log.exception("run_all_checks failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# Skills System Endpoints
+# ============================================================================
+
+class SkillCreateRequest(BaseModel):
+    name: str
+    description: str
+    command: str
+    triggers: List[str] = []
+    enabled: bool = True
+    category: str = "custom"
+    icon: str = "⚡"
+
+
+class SkillExecuteRequest(BaseModel):
+    skill_name: str
+    context: Optional[Dict[str, Any]] = None
+
+
+@app.get("/skills")
+def list_skills():
+    """List all available skills."""
+    try:
+        from skills import SkillManager
+        manager = SkillManager(WORKSPACE_ROOT)
+        return {"skills": manager.list_skills()}
+    except Exception as e:
+        log.exception("list_skills failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/skills/categories")
+def get_skills_by_category():
+    """Get skills grouped by category."""
+    try:
+        from skills import SkillManager
+        manager = SkillManager(WORKSPACE_ROOT)
+        by_category = manager.get_skills_by_category()
+        return {
+            "categories": {
+                cat: [{"name": s.name, "description": s.description, "enabled": s.enabled} for s in skills]
+                for cat, skills in by_category.items()
+            }
+        }
+    except Exception as e:
+        log.exception("get_skills_by_category failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/skills/{skill_name}")
+def get_skill(skill_name: str):
+    """Get details of a specific skill."""
+    try:
+        from skills import SkillManager
+        manager = SkillManager(WORKSPACE_ROOT)
+        skill = manager.get_skill(skill_name)
+        if skill:
+            return skill.to_dict()
+        raise HTTPException(status_code=404, detail=f"Skill '{skill_name}' not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.exception("get_skill failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/skills")
+def create_skill(req: SkillCreateRequest):
+    """Create a new skill."""
+    try:
+        from skills import SkillManager, Skill
+        manager = SkillManager(WORKSPACE_ROOT)
+        skill = Skill(
+            name=req.name,
+            description=req.description,
+            command=req.command,
+            triggers=req.triggers,
+            enabled=req.enabled,
+            category=req.category,
+            icon=req.icon,
+        )
+        if manager.save_skill(skill):
+            return {"ok": True, "skill": skill.to_dict()}
+        raise HTTPException(status_code=500, detail="Failed to save skill")
+    except Exception as e:
+        log.exception("create_skill failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/skills/execute")
+def execute_skill(req: SkillExecuteRequest):
+    """Execute a skill."""
+    try:
+        from skills import SkillManager
+        manager = SkillManager(WORKSPACE_ROOT)
+        result = manager.execute_skill(req.skill_name, req.context)
+        return {
+            "success": result.success,
+            "output": result.output,
+            "error": result.error,
+            "skill_name": result.skill_name,
+            "execution_time": result.execution_time,
+        }
+    except Exception as e:
+        log.exception("execute_skill failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/skills/{skill_name}/enable")
+def enable_skill(skill_name: str):
+    """Enable a skill."""
+    try:
+        from skills import SkillManager
+        manager = SkillManager(WORKSPACE_ROOT)
+        success = manager.enable_skill(skill_name)
+        return {"ok": success}
+    except Exception as e:
+        log.exception("enable_skill failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/skills/{skill_name}/disable")
+def disable_skill(skill_name: str):
+    """Disable a skill."""
+    try:
+        from skills import SkillManager
+        manager = SkillManager(WORKSPACE_ROOT)
+        success = manager.disable_skill(skill_name)
+        return {"ok": success}
+    except Exception as e:
+        log.exception("disable_skill failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/skills/{skill_name}")
+def delete_skill(skill_name: str):
+    """Delete a skill."""
+    try:
+        from skills import SkillManager
+        manager = SkillManager(WORKSPACE_ROOT)
+        success = manager.delete_skill(skill_name)
+        return {"ok": success}
+    except Exception as e:
+        log.exception("delete_skill failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# Hooks System Endpoints
+# ============================================================================
+
+class HookCreateRequest(BaseModel):
+    name: str
+    event: str
+    command: Optional[str] = None
+    script: Optional[str] = None
+    condition: Optional[str] = None
+    description: str = ""
+    enabled: bool = True
+    priority: int = 0
+
+
+@app.get("/hooks")
+def list_hooks():
+    """List all registered hooks."""
+    try:
+        from hooks import HookManager
+        manager = HookManager(WORKSPACE_ROOT)
+        return {"hooks": manager.list_hooks()}
+    except Exception as e:
+        log.exception("list_hooks failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/hooks/templates")
+def get_hook_templates():
+    """Get available hook templates."""
+    try:
+        from hooks import HookManager
+        manager = HookManager(WORKSPACE_ROOT)
+        return {"templates": manager.get_available_templates()}
+    except Exception as e:
+        log.exception("get_hook_templates failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/hooks")
+def create_hook(req: HookCreateRequest):
+    """Create a new hook."""
+    try:
+        from hooks import HookManager, Hook
+        manager = HookManager(WORKSPACE_ROOT)
+        hook = Hook(
+            name=req.name,
+            event=req.event,
+            command=req.command,
+            script=req.script,
+            condition=req.condition,
+            description=req.description,
+            enabled=req.enabled,
+            priority=req.priority,
+        )
+        if manager.register_hook(hook):
+            return {"ok": True, "hook": hook.to_dict()}
+        raise HTTPException(status_code=500, detail="Failed to register hook")
+    except Exception as e:
+        log.exception("create_hook failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/hooks/from-template")
+def create_hook_from_template(template_name: str):
+    """Create a hook from a template."""
+    try:
+        from hooks import HookManager
+        manager = HookManager(WORKSPACE_ROOT)
+        hook = manager.create_hook_from_template(template_name)
+        if hook:
+            return {"ok": True, "hook": hook.to_dict()}
+        raise HTTPException(status_code=400, detail=f"Template '{template_name}' not found")
+    except Exception as e:
+        log.exception("create_hook_from_template failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/hooks/{hook_name}/enable")
+def enable_hook(hook_name: str):
+    """Enable a hook."""
+    try:
+        from hooks import HookManager
+        manager = HookManager(WORKSPACE_ROOT)
+        success = manager.enable_hook(hook_name)
+        return {"ok": success}
+    except Exception as e:
+        log.exception("enable_hook failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/hooks/{hook_name}/disable")
+def disable_hook(hook_name: str):
+    """Disable a hook."""
+    try:
+        from hooks import HookManager
+        manager = HookManager(WORKSPACE_ROOT)
+        success = manager.disable_hook(hook_name)
+        return {"ok": success}
+    except Exception as e:
+        log.exception("disable_hook failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/hooks/{hook_name}")
+def delete_hook(hook_name: str):
+    """Delete a hook."""
+    try:
+        from hooks import HookManager
+        manager = HookManager(WORKSPACE_ROOT)
+        success = manager.unregister_hook(hook_name)
+        return {"ok": success}
+    except Exception as e:
+        log.exception("delete_hook failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# Plugin System Endpoints
+# ============================================================================
+
+@app.get("/plugins")
+def list_plugins():
+    """List all available plugins."""
+    try:
+        from plugins import PluginManager
+        manager = PluginManager(WORKSPACE_ROOT)
+        return {"plugins": manager.list_plugins()}
+    except Exception as e:
+        log.exception("list_plugins failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/plugins/{plugin_name}")
+def get_plugin_info(plugin_name: str):
+    """Get detailed information about a plugin."""
+    try:
+        from plugins import PluginManager
+        manager = PluginManager(WORKSPACE_ROOT)
+        info = manager.get_plugin_info(plugin_name)
+        if info:
+            return {
+                "name": info.name,
+                "version": info.version,
+                "description": info.description,
+                "author": info.author,
+                "hooks": [h.value for h in info.hooks],
+                "enabled": info.enabled,
+            }
+        raise HTTPException(status_code=404, detail=f"Plugin '{plugin_name}' not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.exception("get_plugin_info failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/plugins/{plugin_name}/enable")
+def enable_plugin(plugin_name: str):
+    """Enable a plugin."""
+    try:
+        from plugins import PluginManager
+        manager = PluginManager(WORKSPACE_ROOT)
+        success = manager.enable_plugin(plugin_name)
+        return {"ok": success}
+    except Exception as e:
+        log.exception("enable_plugin failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/plugins/{plugin_name}/disable")
+def disable_plugin(plugin_name: str):
+    """Disable a plugin."""
+    try:
+        from plugins import PluginManager
+        manager = PluginManager(WORKSPACE_ROOT)
+        success = manager.disable_plugin(plugin_name)
+        return {"ok": success}
+    except Exception as e:
+        log.exception("disable_plugin failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/plugins/hooks")
+def get_plugin_hooks():
+    """Get available plugin hook types."""
+    try:
+        from plugins import PluginHook
+        return {"hooks": [h.value for h in PluginHook]}
+    except Exception as e:
+        log.exception("get_plugin_hooks failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# Session Manager Endpoints
+# ============================================================================
+
+@app.get("/sessions")
+def list_sessions(limit: int = 50, offset: int = 0):
+    """List all sessions."""
+    try:
+        from session_manager import SessionManager
+        manager = SessionManager(WORKSPACE_ROOT)
+        sessions = manager.list_sessions(limit=limit, offset=offset)
+        return {"sessions": sessions}
+    except Exception as e:
+        log.exception("list_sessions failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/sessions/{session_id}")
+def get_session(session_id: int):
+    """Get details of a specific session."""
+    try:
+        from session_manager import SessionManager
+        manager = SessionManager(WORKSPACE_ROOT)
+        session = manager.get_session(session_id)
+        if session:
+            return {
+                "id": session.id,
+                "title": session.title,
+                "created_at": session.created_at.isoformat(),
+                "state": session.state.value,
+                "mode": session.mode,
+                "tags": session.tags,
+                "stats": {
+                    "total_messages": session.stats.total_messages,
+                    "files_created": session.stats.files_created,
+                    "files_modified": session.stats.files_modified,
+                },
+            }
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.exception("get_session failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/sessions/{session_id}/fork")
+def fork_session(session_id: int, title: Optional[str] = None):
+    """Fork a session to create a new one."""
+    try:
+        from session_manager import SessionManager
+        manager = SessionManager(WORKSPACE_ROOT)
+        new_session = manager.fork_session(session_id, title)
+        if new_session:
+            return {"ok": True, "new_session_id": new_session.id, "title": new_session.title}
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.exception("fork_session failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class SessionTagsRequest(BaseModel):
+    tags: List[str]
+
+
+@app.post("/sessions/{session_id}/tags")
+def set_session_tags(session_id: int, req: SessionTagsRequest):
+    """Set tags for a session."""
+    try:
+        from session_manager import SessionManager
+        manager = SessionManager(WORKSPACE_ROOT)
+        manager.set_session_tags(session_id, req.tags)
+        return {"ok": True, "tags": req.tags}
+    except Exception as e:
+        log.exception("set_session_tags failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/sessions/{session_id}/export")
+def export_session(session_id: int, format: str = "json"):
+    """Export a session."""
+    try:
+        from session_manager import SessionManager
+        manager = SessionManager(WORKSPACE_ROOT)
+        data = manager.export_session(session_id, format)
+        return {"session": data}
+    except Exception as e:
+        log.exception("export_session failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/sessions/import")
+def import_session(title: str, data: Dict[str, Any]):
+    """Import a session."""
+    try:
+        from session_manager import SessionManager
+        manager = SessionManager(WORKSPACE_ROOT)
+        session = manager.import_session(title, data)
+        if session:
+            return {"ok": True, "session_id": session.id, "title": session.title}
+        raise HTTPException(status_code=500, detail="Failed to import session")
+    except Exception as e:
+        log.exception("import_session failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/sessions/stats")
+def get_session_stats():
+    """Get overall session statistics."""
+    try:
+        from session_manager import SessionManager
+        manager = SessionManager(WORKSPACE_ROOT)
+        return manager.get_stats()
+    except Exception as e:
+        log.exception("get_session_stats failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 if __name__ == "__main__":
     run_server()
